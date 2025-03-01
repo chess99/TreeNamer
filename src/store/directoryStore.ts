@@ -8,6 +8,14 @@ interface DirectoryOptions {
   showHidden: boolean;
 }
 
+// This interface matches the Rust struct
+interface RustDirectoryOptions {
+  max_depth: number;
+  exclude_pattern: string;
+  follow_symlinks: boolean;
+  show_hidden: boolean;
+}
+
 interface DirectoryState {
   directoryPath: string;
   originalTree: string;
@@ -47,15 +55,24 @@ export const useDirectoryStore = create<DirectoryState>((set, get) => ({
       
       const mergedOptions = { ...defaultOptions, ...options };
       
+      // Convert to the format expected by Rust
+      const rustOptions: RustDirectoryOptions = {
+        max_depth: mergedOptions.maxDepth,
+        exclude_pattern: mergedOptions.excludePattern,
+        follow_symlinks: mergedOptions.followSymlinks,
+        show_hidden: mergedOptions.showHidden
+      };
+      
       // Call the Rust function to parse the directory
       const result = await invoke<string>('parse_directory', { 
         path: directoryPath,
-        options: mergedOptions
+        options: rustOptions
       });
       
       set({ originalTree: result, isLoading: false });
     } catch (e) {
-      set({ error: e as string, isLoading: false });
+      console.error('Error loading directory:', e);
+      set({ error: String(e), isLoading: false });
     }
   },
 
@@ -72,7 +89,8 @@ export const useDirectoryStore = create<DirectoryState>((set, get) => ({
       
       set({ isLoading: false });
     } catch (e) {
-      set({ error: e as string, isLoading: false });
+      console.error('Error applying changes:', e);
+      set({ error: String(e), isLoading: false });
     }
   },
 

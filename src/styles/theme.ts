@@ -1,31 +1,34 @@
-import { theme as baseTheme } from "@chakra-ui/react";
+import { createSystem, defaultConfig, defineConfig, mergeConfigs } from "@chakra-ui/react";
 
-const theme = {
-  ...baseTheme,
-  fonts: {
-    heading: 'Inter, system-ui, sans-serif',
-    body: 'Inter, system-ui, sans-serif',
-    mono: 'var(--font-mono)',
-  },
-  colors: {
-    ...baseTheme.colors,
-    brand: {
-      50: '#e6f6ff',
-      100: '#b3e0ff',
-      200: '#80cbff',
-      300: '#4db5ff',
-      400: '#1a9fff',
-      500: '#0078d4', // Primary brand color
-      600: '#0062ab',
-      700: '#004b82',
-      800: '#003559',
-      900: '#001e30',
+const customConfig = defineConfig({
+  theme: {
+    tokens: {
+      colors: {
+        brand: {
+          50: { value: "#f7fafc" },
+          100: { value: "#edf2f7" },
+          200: { value: "#e2e8f0" },
+          300: { value: "#cbd5e0" },
+          400: { value: "#a0aec0" },
+          500: { value: "#718096" },
+          600: { value: "#4a5568" },
+          700: { value: "#2d3748" },
+          800: { value: "#1a202c" },
+          900: { value: "#171923" },
+        },
+      },
+      fonts: {
+        heading: { value: "Inter, sans-serif" },
+        body: { value: "Inter, sans-serif" },
+      },
     },
   },
-  config: {
-    initialColorMode: 'light',
-    useSystemColorMode: true,
-  },
-};
+});
 
-export default theme; 
+// Merge with default config
+const config = mergeConfigs(defaultConfig, customConfig);
+
+// Create the system
+const system = createSystem(config);
+
+export default system; 

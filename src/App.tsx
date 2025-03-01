@@ -1,10 +1,13 @@
 import { open } from "@tauri-apps/plugin-dialog";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import "./App.css";
 import DirectoryTree from "./components/FileTree/DirectoryTree";
+import DirectorySettings from "./components/Settings/DirectorySettings";
 import { useDirectoryStore } from "./store/directoryStore";
 
 function App() {
+  const [showSettings, setShowSettings] = useState(false);
+  
   const { 
     directoryPath, 
     originalTree, 
@@ -57,9 +60,20 @@ function App() {
         <button type="button" onClick={() => loadDirectory()} disabled={isLoading || !directoryPath}>
           {isLoading ? "Loading..." : "Load Directory"}
         </button>
+        <button type="button" onClick={() => setShowSettings(true)} disabled={isLoading || !directoryPath}>
+          Settings
+        </button>
       </div>
 
       {error && <div className="error">{error}</div>}
+
+      {showSettings && (
+        <div className="modal-overlay">
+          <div className="modal-content">
+            <DirectorySettings onClose={() => setShowSettings(false)} />
+          </div>
+        </div>
+      )}
 
       {originalTree && (
         <div className="tree-container">

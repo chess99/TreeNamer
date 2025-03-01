@@ -107,6 +107,30 @@ button {
   padding: 0;
 }
 
+/* Modal Overlay Styles */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+}
+
+.modal-content {
+  background-color: #f6f6f6;
+  border-radius: 8px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+  max-width: 90%;
+  max-height: 90%;
+  overflow: auto;
+  z-index: 1001;
+}
+
 @media (prefers-color-scheme: dark) {
   :root {
     color: #f6f6f6;
@@ -125,5 +149,10 @@ button {
   
   .tree-container {
     border-color: #444;
+  }
+  
+  .modal-content {
+    background-color: #2f2f2f;
+    color: #f6f6f6;
   }
 }
