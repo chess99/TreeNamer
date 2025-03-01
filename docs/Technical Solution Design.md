@@ -14,6 +14,9 @@
 |  - 用户交互逻辑          |
 +------------+------------+
              ↑ Tauri API 调用
+             | (命令调用/事件监听)
++------------+------------+
+|    共享内存区域          | ← 大型目录数据交换
 +------------+------------+
 |       后端 (Rust)        |
 +-------------------------+
@@ -43,9 +46,11 @@ treenamer/
 │   ├── src/
 │   │   ├── main.rs           # 入口点
 │   │   ├── commands/         # Tauri命令
+│   │   │   ├── mod.rs        # 命令模块聚合
 │   │   │   ├── fs.rs         # 文件系统操作
 │   │   │   ├── tree.rs       # 目录树解析
 │   │   │   └── backup.rs     # 备份管理
+│   │   ├── error.rs          # 统一错误处理模块
 │   │   └── utils/            # 工具函数
 │   ├── Cargo.toml            # Rust依赖
 │   └── tauri.conf.json       # Tauri配置
@@ -54,6 +59,8 @@ treenamer/
 │   ├── unit/                 # 单元测试
 │   └── e2e/                  # 端到端测试
 ├── package.json              # Node.js依赖
+├── .vscode/                  # VSCode配置
+│   └── launch.json           # 调试配置
 └── README.md                 # 项目文档
 ```
 
@@ -68,9 +75,28 @@ treenamer/
 - **示例**：
 
   ```rust
+  // 目录选项结构体
+  pub struct DirectoryOptions {
+      pub max_depth: usize,
+      pub exclude_pattern: Regex,  // 使用正则而非字符串
+      pub follow_symlinks: bool,
+      pub show_hidden: bool,
+  }
+  
   // 生成逻辑 (Rust)
   fn parse_directory(path: &str, options: DirectoryOptions) -> Result<String, Error> {
-    // 实现目录解析逻辑
+      // 实现目录解析逻辑
+  }
+  
+  // 并行扫描实现
+  fn parallel_scan(dir: &Path, options: &DirectoryOptions) -> Result<Vec<DirEntry>> {
+      WalkDir::new(dir)
+          .max_depth(options.max_depth)
+          .follow_links(options.follow_symlinks)
+          .parallelism(Parallelism::RayonNewPool(4))
+          .into_iter()
+          .filter_entry(|e| !options.exclude_pattern.is_match(e.path().to_str().unwrap_or("")))
+          .collect()
   }
   
   // 前端调用 (JavaScript)
@@ -78,16 +104,18 @@ treenamer/
     path: '/projects',
     options: {
       maxDepth: 5,
-      exclude: 'node_modules'
+      excludePattern: 'node_modules|.git',
+      followSymlinks: false,
+      showHidden: false
     }
   });
   ```
 
 #### 关键技术点
 
-- **递归扫描**：使用`std::fs::read_dir`遍历目录
+- **递归扫描**：使用`ignore`库替代原生`std::fs::read_dir`，支持`.gitignore`式过滤
 - **符号统一化**：将Windows路径分隔符`\`转换为`/`
-- **性能优化**：利用Rust的并行迭代器处理大型目录
+- **性能优化**：利用Rust的Rayon并行迭代器处理大型目录，明确线程池配置
 
 ### 2. 编辑器内核
 
@@ -163,7 +191,7 @@ sequenceDiagram
   备份管理器-->>-Rust后端: 返回备份路径
   Rust后端->>+操作队列: 生成原子操作列表
   loop 每个操作
-    操作队列->>文件系统: 执行rename/mkdir/rmdir
+    操作队列->>文件系统: 执行原子操作(rename/mkdir/rmdir)
     文件系统-->>操作队列: 返回结果
   end
   Rust后端-->>-前端: 返回操作结果
@@ -177,6 +205,12 @@ enum FileOperation {
     Rename { from: String, to: String },
     CreateDir { path: String },
     Delete { path: String },
+    SetPermissions { path: String, mode: u32 }, // 新增权限操作
+}
+
+struct RollbackStep {
+    operation: FileOperation,
+    original_state: Option<Vec<u8>>, // 可能包含原始文件内容备份
 }
 
 fn apply_operations(ops: Vec<FileOperation>) -> Result<(), Error> {
@@ -191,11 +225,39 @@ fn apply_operations(ops: Vec<FileOperation>) -> Result<(), Error> {
     Ok(())
 }
 
+// 回滚逻辑补充
 fn rollback(steps: Vec<RollbackStep>) -> Result<(), Error> {
     for step in steps.iter().rev() {
         execute_rollback(step)?;
     }
     Ok(())
+}
+
+fn execute_rollback(step: &RollbackStep) -> Result<(), Error> {
+    match &step.operation {
+        FileOperation::Rename { from, to } => 
+            std::fs::rename(to, from)?,  // 反向操作
+        FileOperation::CreateDir { path } => 
+            std::fs::remove_dir_all(path)?,
+        FileOperation::Delete { path } => {
+            if let Some(data) = &step.original_state {
+                std::fs::write(path, data)?;
+            }
+        },
+        FileOperation::SetPermissions { path, .. } => {
+            // 恢复原始权限
+        }
+    }
+    Ok(())
+}
+
+// 系统保护目录检测
+fn is_protected_path(path: &Path) -> bool {
+    let protected_paths = [
+        "/System", "/Library", "/usr", 
+        "C:\\Windows", "C:\\Program Files", "C:\\Program Files (x86)"
+    ];
+    protected_paths.iter().any(|p| path.starts_with(p))
 }
 ```
 
@@ -216,9 +278,45 @@ fn rollback(steps: Vec<RollbackStep>) -> Result<(), Error> {
 | **Redux** | 成熟稳定，可预测性强，开发工具丰富 | 代码冗长，学习曲线陡峭 | ★★☆☆☆ |
 | **Zustand** | 简洁，样板代码少，TypeScript支持好 | 生态系统不如Redux丰富 | ★★★★★ |
 | **Context API** | React内置，无需额外依赖 | 可能导致不必要的重渲染，复杂状态下性能较差 | ★★★☆☆ |
-| **Jotai** | 原子化方法，性能好 | 较新的库，生态不够成熟 | ★★★☆☆ |
+| **Jotai** | 原子化状态，适用于细粒度更新 | 社区示例较少 | ★★★★☆ |
 
 **选择**: Zustand，因其简洁性、性能和TypeScript支持，非常适合本项目需求。
+
+**与Tauri的集成方案**:
+
+```javascript
+// store/fsStore.js
+import create from 'zustand';
+import { invoke } from '@tauri-apps/api/tauri';
+import { listen } from '@tauri-apps/api/event';
+
+export const useDirectoryStore = create((set, get) => ({
+  directoryTree: null,
+  isLoading: false,
+  error: null,
+  
+  loadDirectory: async (path) => {
+    set({ isLoading: true, error: null });
+    try {
+      // 调用Tauri命令
+      const tree = await invoke('parse_directory', { path });
+      set({ directoryTree: tree, isLoading: false });
+      
+      // 设置文件系统监听
+      const unlisten = await listen('fs-change', (event) => {
+        // 处理文件系统变化事件
+        if (get().directoryTree) {
+          // 更新目录树
+        }
+      });
+      
+      return unlisten;
+    } catch (err) {
+      set({ error: err, isLoading: false });
+    }
+  }
+}));
+```
 
 ### 3. UI组件库选型
 
@@ -238,15 +336,25 @@ fn rollback(steps: Vec<RollbackStep>) -> Result<(), Error> {
 | **Jest** | 广泛使用，功能全面 | 比新型替代品慢 | ★★★★☆ |
 | **Vitest** | 快速，Vite集成，现代化 | 较新，生态系统小 | ★★★★★ |
 | **Testing Library** | 组件测试，以用户为中心 | 需要与测试运行器配对 | ★★★★★ |
-| **WebdriverIO** | E2E测试，浏览器自动化 | 设置复杂 | ★★★★☆ |
+| **Tauri Testing** | 专为Tauri应用设计，直接操作Tauri API | 文档相对较少 | ★★★★★ |
 
-**选择**: Vitest + Testing Library用于单元/组件测试，WebdriverIO用于E2E测试。
+**选择**:
+
+- 单元/组件测试: Vitest + Testing Library
+- E2E测试: Tauri官方推荐的WebDriver方案
+
+```toml
+# Cargo.toml
+[dev-dependencies]
+tauri-plugin-automation = "0.1"  # 专为Tauri E2E测试设计
+```
 
 ### 5. 安全防护设计
 
 - **路径校验**：禁止操作系统保护目录（如`/System`、`C:\Windows`）
 - **符号链接处理**：默认跳过符号链接，提供选项开关
 - **权限控制**：利用Tauri的细粒度权限系统限制文件访问范围
+- **文件名合法性检查**：过滤非法字符，防止跨平台问题
 
 ## 四、其他设计决策
 
@@ -255,13 +363,44 @@ fn rollback(steps: Vec<RollbackStep>) -> Result<(), Error> {
 - **错误传播**：使用Rust的`Result`类型，通过Tauri命令返回给前端
 - **错误分类**：
 
-  ```typescript
+  ```rust
+  #[derive(Debug, Serialize)]
   enum ErrorType {
-    PERMISSION_DENIED,
-    FILE_NOT_FOUND,
-    PATH_ALREADY_EXISTS,
-    SYSTEM_ERROR,
-    USER_ABORT
+      PERMISSION_DENIED,
+      FILE_NOT_FOUND,
+      PATH_ALREADY_EXISTS,
+      SYSTEM_ERROR,
+      USER_ABORT,
+      INVALID_FILENAME,  // 新增非法字符检测
+      DISK_FULL,
+  }
+  
+  #[derive(Debug, Serialize)]
+  struct AppError {
+      error_type: ErrorType,
+      message: String,
+      path: Option<String>,
+      recoverable: bool,
+  }
+  
+  impl From<std::io::Error> for AppError {
+      fn from(error: std::io::Error) -> Self {
+          match error.kind() {
+              std::io::ErrorKind::PermissionDenied => AppError {
+                  error_type: ErrorType::PERMISSION_DENIED,
+                  message: "权限不足".into(),
+                  path: None,
+                  recoverable: false,
+              },
+              // 其他错误类型映射...
+              _ => AppError {
+                  error_type: ErrorType::SYSTEM_ERROR,
+                  message: error.to_string(),
+                  path: None,
+                  recoverable: false,
+              }
+          }
+      }
   }
   ```
 
@@ -286,11 +425,38 @@ fn rollback(steps: Vec<RollbackStep>) -> Result<(), Error> {
 
 | 模块                | 优化手段                              | 目标指标          |
 |---------------------|--------------------------------------|-------------------|
-| 目录树渲染          | 虚拟滚动（react-window）             | 1万节点60fps      |
+| 目录树渲染          | 虚拟滚动（react-virtuoso）           | 1万节点60fps      |
 | Diff计算            | Web Worker并行计算                   | 0延迟响应         |
 | 文件操作            | Rust并行处理 + 异步队列              | 每秒1000+操作     |
 | 大型目录加载        | 流式加载 + 进度指示                  | 10万文件<5秒      |
 | 编辑器响应          | 防抖动 + 增量更新                    | 输入延迟<16ms     |
+
+**虚拟滚动实现细节**:
+
+```javascript
+// 使用react-virtuoso替代react-window
+import { Virtuoso } from 'react-virtuoso';
+
+<Virtuoso
+  data={treeNodes}
+  itemContent={(index) => <TreeNode node={nodes[index]}/>}
+  overscan={500}  // 针对大型目录优化
+  style={{ height: '100%', width: '100%' }}
+/>
+```
+
+**Rust并行处理**:
+
+```rust
+// 使用Rayon并行迭代器
+use rayon::prelude::*;
+
+fn process_operations(ops: Vec<FileOperation>) -> Vec<Result<(), Error>> {
+    ops.par_iter()
+        .map(|op| execute_operation(op))
+        .collect()
+}
+```
 
 ### 5. 部署与分发策略
 
@@ -318,7 +484,47 @@ fn rollback(steps: Vec<RollbackStep>) -> Result<(), Error> {
   - 自动化测试（单元测试、集成测试）
   - 自动发布到GitHub Releases
 
-## 五、测试方案
+### 7. 版本兼容性策略
+
+- **Rust版本**：最低支持`1.70+`
+- **Node.js版本**：`^18.0.0`
+- **操作系统**：
+  - Windows 10/11
+  - macOS 11+
+  - Ubuntu 20.04+/Debian 11+
+
+## 五、关键流程图
+
+### 1. 目录加载流程
+
+```mermaid
+graph TD
+    A[用户拖入文件夹] --> B{路径校验}
+    B -->|合法| C[生成目录树]
+    B -->|非法| D[显示错误提示]
+    C --> E[渲染编辑器]
+    E --> F[用户编辑]
+    F --> G{实时验证}
+    G -->|有效| H[更新差异视图]
+    G -->|无效| I[显示警告]
+```
+
+### 2. 文件操作应用流程
+
+```mermaid
+graph TD
+    A[用户点击应用修改] --> B[生成操作列表]
+    B --> C{操作验证}
+    C -->|通过| D[创建备份]
+    C -->|失败| E[显示错误]
+    D --> F[执行操作]
+    F --> G{执行结果}
+    G -->|成功| H[显示成功]
+    G -->|失败| I[执行回滚]
+    I --> J[显示错误]
+```
+
+## 六、测试方案
 
 ### 1. 单元测试
 
@@ -328,6 +534,15 @@ fn test_parse_nested_directory() {
     let tree = parse_directory("test/fixtures/nested", Default::default()).unwrap();
     assert!(tree.contains("nested/"));
     assert!(tree.contains("└── child/"));
+}
+
+#[test]
+fn test_protected_path_detection() {
+    let system_path = Path::new("/System/Library");
+    assert!(is_protected_path(system_path));
+    
+    let user_path = Path::new("/Users/username/Documents");
+    assert!(!is_protected_path(user_path));
 }
 ```
 
@@ -342,38 +557,56 @@ test('识别目录移动', () => {
 
 ### 2. 端到端测试
 
-使用**WebdriverIO**模拟用户操作：
+使用**Tauri Testing**模拟用户操作：
 
 ```javascript
-it('should rename files using regex', async () => {
-  await browser.url('/');
-  await $('#drop-zone').setValue('/test/folder');
-  await $('.editor').waitForDisplayed();
-  await browser.keys(['Control', 'r']);
-  await $('#regex-input').setValue('\d+');
-  await $('#replace-all').click();
-  await $('#apply-changes').click();
+import { test, expect } from '@playwright/test';
+
+test('should rename files using regex', async ({ page }) => {
+  await page.goto('/');
+  
+  // 拖放文件夹
+  await page.locator('#drop-zone').setInputFiles('/test/folder');
+  await page.locator('.editor').waitFor();
+  
+  // 执行正则替换
+  await page.keyboard.press('Control+r');
+  await page.locator('#regex-input').fill('\\d+');
+  await page.locator('#replace-all').click();
+  await page.locator('#apply-changes').click();
+  
+  // 验证结果
+  await expect(page.locator('.success-message')).toBeVisible();
 });
 ```
 
-## 六、部署与维护
+## 七、部署与维护
 
 ### 1. 打包配置
 
 ```toml
+# Cargo.toml
 [package]
 name = "treenamer"
 version = "0.1.0"
 edition = "2021"
+rust-version = "1.70"
+authors = ["TreeNamer Team"]
+description = "目录树可视化重命名工具"
 
 [dependencies]
 tauri = { version = "1.5", features = ["api-all"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+tokio = { version = "1.0", features = ["full"] }  # 明确异步运行时
+rayon = "1.7"  # 并行计算
+ignore = "0.4"  # 高效目录扫描
+regex = "1.9"
 
 [build-dependencies]
 tauri-build = { version = "1.5", features = [] }
 
+# tauri.conf.json
 {
   "build": {
     "distDir": "../dist",
@@ -396,3 +629,30 @@ tauri-build = { version = "1.5", features = [] }
 
 - 自动更新：集成Tauri自动更新API
 - 渠道管理：稳定版（Stable）与测试版（Beta）双通道
+
+### 3. VSCode调试配置
+
+```json
+// .vscode/launch.json
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "node",
+      "request": "launch",
+      "name": "Debug Tauri",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug Rust",
+      "cargo": {
+        "args": ["build", "--manifest-path", "${workspaceFolder}/src-tauri/Cargo.toml"]
+      }
+    }
+  ]
+}
+```
