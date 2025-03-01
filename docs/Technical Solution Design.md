@@ -23,6 +23,40 @@
 +-------------------------+
 ```
 
+### 2. 项目文件结构
+
+```
+treenamer/
+├── src/                      # 前端React代码
+│   ├── components/           # UI组件
+│   │   ├── Editor/           # Monaco编辑器组件
+│   │   ├── DiffView/         # 差异可视化组件
+│   │   ├── FileTree/         # 目录树组件
+│   │   └── common/           # 共享UI组件
+│   ├── hooks/                # 自定义React hooks
+│   ├── store/                # 状态管理
+│   ├── utils/                # 工具函数
+│   ├── styles/               # 全局样式
+│   ├── App.tsx               # 主应用组件
+│   └── main.tsx              # 入口点
+├── src-tauri/                # Rust后端代码
+│   ├── src/
+│   │   ├── main.rs           # 入口点
+│   │   ├── commands/         # Tauri命令
+│   │   │   ├── fs.rs         # 文件系统操作
+│   │   │   ├── tree.rs       # 目录树解析
+│   │   │   └── backup.rs     # 备份管理
+│   │   └── utils/            # 工具函数
+│   ├── Cargo.toml            # Rust依赖
+│   └── tauri.conf.json       # Tauri配置
+├── public/                   # 静态资源
+├── tests/                    # 测试文件
+│   ├── unit/                 # 单元测试
+│   └── e2e/                  # 端到端测试
+├── package.json              # Node.js依赖
+└── README.md                 # 项目文档
+```
+
 ## 二、核心模块设计
 
 ### 1. 目录树解析器
@@ -63,13 +97,13 @@
 // 初始化双编辑器实例
 const originalEditor = monaco.editor.create(leftPanel, {
   value: initialTreeText,
-  readOnly: true, // 左侧只读
+  readOnly: true,
   minimap: { enabled: false }
 });
 
 const editableEditor = monaco.editor.create(rightPanel, {
   value: initialTreeText, 
-  multiCursorModifier: 'ctrlCmd', // 多光标支持
+  multiCursorModifier: 'ctrlCmd',
   quickSuggestions: false
 });
 
@@ -79,7 +113,7 @@ editableEditor.onDidChangeModelContent(() => {
     originalEditor.getValue(),
     editableEditor.getValue()
   );
-  renderDiffDecorations(diffs); // 差异高亮
+  renderDiffDecorations(diffs);
 });
 ```
 
@@ -113,7 +147,6 @@ interface DiffMarker {
   type: 'add' | 'delete' | 'modify';
   lineNumber: number;
   content: string;
-  // 可视化样式
   className: 'diff-add' | 'diff-del' | 'diff-mod'; 
 }
 ```
@@ -166,7 +199,7 @@ fn rollback(steps: Vec<RollbackStep>) -> Result<(), Error> {
 }
 ```
 
-## 三、关键技术决策
+## 三、技术选型决策
 
 ### 1. 前后端通信优化
 
@@ -176,21 +209,114 @@ fn rollback(steps: Vec<RollbackStep>) -> Result<(), Error> {
 | 实时Diff计算        | 前端自主处理，避免跨进程延迟          | 无                |
 | 大文件操作进度反馈  | Tauri事件系统                        | 进度百分比        |
 
-### 2. 安全防护设计
+### 2. 状态管理选型
+
+| 方案 | 优势 | 劣势 | 推荐度 |
+|------|------|------|--------|
+| **Redux** | 成熟稳定，可预测性强，开发工具丰富 | 代码冗长，学习曲线陡峭 | ★★☆☆☆ |
+| **Zustand** | 简洁，样板代码少，TypeScript支持好 | 生态系统不如Redux丰富 | ★★★★★ |
+| **Context API** | React内置，无需额外依赖 | 可能导致不必要的重渲染，复杂状态下性能较差 | ★★★☆☆ |
+| **Jotai** | 原子化方法，性能好 | 较新的库，生态不够成熟 | ★★★☆☆ |
+
+**选择**: Zustand，因其简洁性、性能和TypeScript支持，非常适合本项目需求。
+
+### 3. UI组件库选型
+
+| 库 | 优势 | 劣势 | 推荐度 |
+|----|------|------|--------|
+| **Material UI** | 全面，文档完善 | 包体积大，样式较固定 | ★★★★☆ |
+| **Ant Design** | 功能丰富，企业级 | 包体积大，风格特定 | ★★☆☆☆ |
+| **Chakra UI** | 可访问性好，可定制，轻量 | 组件数量少于其他库 | ★★★★★ |
+| **Tailwind CSS** | 实用优先，高度可定制 | 学习曲线较陡，HTML冗长 | ★★★☆☆ |
+
+**选择**: Chakra UI，因其可访问性、可定制性和较小的包体积，这对桌面应用尤为重要。
+
+### 4. 测试框架选型
+
+| 框架 | 优势 | 劣势 | 推荐度 |
+|------|------|------|--------|
+| **Jest** | 广泛使用，功能全面 | 比新型替代品慢 | ★★★★☆ |
+| **Vitest** | 快速，Vite集成，现代化 | 较新，生态系统小 | ★★★★★ |
+| **Testing Library** | 组件测试，以用户为中心 | 需要与测试运行器配对 | ★★★★★ |
+| **WebdriverIO** | E2E测试，浏览器自动化 | 设置复杂 | ★★★★☆ |
+
+**选择**: Vitest + Testing Library用于单元/组件测试，WebdriverIO用于E2E测试。
+
+### 5. 安全防护设计
 
 - **路径校验**：禁止操作系统保护目录（如`/System`、`C:\Windows`）
 - **符号链接处理**：默认跳过符号链接，提供选项开关
 - **权限控制**：利用Tauri的细粒度权限系统限制文件访问范围
 
-## 四、性能优化策略
+## 四、其他设计决策
+
+### 1. 错误处理策略
+
+- **错误传播**：使用Rust的`Result`类型，通过Tauri命令返回给前端
+- **错误分类**：
+
+  ```typescript
+  enum ErrorType {
+    PERMISSION_DENIED,
+    FILE_NOT_FOUND,
+    PATH_ALREADY_EXISTS,
+    SYSTEM_ERROR,
+    USER_ABORT
+  }
+  ```
+
+- **用户反馈**：根据错误类型显示不同的UI提示（Toast、Modal等）
+- **日志记录**：关键错误自动记录到本地日志文件
+
+### 2. 国际化(i18n)方案
+
+- **支持语言**：初期支持中文和英文
+- **技术选型**：使用`react-i18next`库
+- **翻译管理**：JSON格式的语言文件，按功能模块组织
+- **动态切换**：运行时切换语言，无需重启应用
+
+### 3. 主题与样式策略
+
+- **主题支持**：内置亮色/暗色主题
+- **响应系统设置**：自动检测系统主题偏好
+- **样式方案**：使用Chakra UI的主题系统，CSS-in-JS方案
+- **设计规范**：定义颜色、字体、间距等基础设计变量
+
+### 4. 性能优化技术
 
 | 模块                | 优化手段                              | 目标指标          |
 |---------------------|--------------------------------------|-------------------|
 | 目录树渲染          | 虚拟滚动（react-window）             | 1万节点60fps      |
 | Diff计算            | Web Worker并行计算                   | 0延迟响应         |
 | 文件操作            | Rust并行处理 + 异步队列              | 每秒1000+操作     |
+| 大型目录加载        | 流式加载 + 进度指示                  | 10万文件<5秒      |
+| 编辑器响应          | 防抖动 + 增量更新                    | 输入延迟<16ms     |
 
----
+### 5. 部署与分发策略
+
+- **打包配置**：针对不同平台优化（Windows/macOS/Linux）
+- **自动更新**：集成Tauri自动更新API
+- **版本控制**：语义化版本号（Semantic Versioning）
+- **渠道管理**：稳定版（Stable）与测试版（Beta）双通道
+
+### 6. 开发工作流
+
+- **Git分支策略**：
+  - `main`: 稳定版本
+  - `develop`: 开发主分支
+  - `feature/*`: 功能分支
+  - `release/*`: 发布准备分支
+  - `hotfix/*`: 紧急修复分支
+
+- **代码质量工具**：
+  - ESLint + Prettier: 代码风格和质量检查
+  - Husky: Git钩子自动运行检查
+  - TypeScript严格模式: 类型安全
+
+- **CI/CD流程**：
+  - GitHub Actions自动化构建
+  - 自动化测试（单元测试、集成测试）
+  - 自动发布到GitHub Releases
 
 ## 五、测试方案
 
