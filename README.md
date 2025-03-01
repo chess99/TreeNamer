@@ -1,12 +1,8 @@
-以下为 **TreeSync** 项目的第一个文档：**README.md**。其他文档将分次回复。
-
----
-
-# TreeSync - 目录树同步重命名工具
+# TreeNamer - 目录树重命名工具
 
 ## 项目概述
 
-TreeSync 是一款可视化目录树编辑与批量重命名工具，支持通过类似代码编辑器的交互方式直接修改目录结构，并安全同步到实际文件系统。  
+TreeNamer 是一款可视化目录树编辑与批量重命名工具，支持通过类似代码编辑器的交互方式直接修改目录结构，并安全同步到实际文件系统。  
 **核心功能**：目录树可视化编辑、多光标操作、正则替换、分屏差异对比、安全应用修改。
 
 ---
@@ -29,7 +25,7 @@ TreeSync 是一款可视化目录树编辑与批量重命名工具，支持通�
 
 ```bash
 # 克隆仓库
-git clone https://github.com/your-repo/TreeSync.git
+git clone https://github.com/your-repo/TreeNamer.git
 
 # 安装依赖
 npm install
@@ -67,17 +63,17 @@ npm start
 
 | 模块           | 技术选型                                 |
 |----------------|------------------------------------------|
-| **前端框架**   | Electron + React                         |
+| **前端框架**   | Tauri + React                           |
 | **编辑器核心** | Monaco Editor（VSCode同款编辑器内核）    |
 | **Diff算法**   | diff-match-patch                         |
-| **目录树解析** | Node.js `fs`模块 +自定义解析器           |
-| **打包工具**   | electron-builder                         |
+| **目录树解析** | Rust + 自定义解析器                      |
+| **打包工具**   | Tauri CLI                               |
 
 ---
 
 ## 注意事项
 
-- **备份机制**：执行修改前自动生成`.treesync_backup`文件夹保存原始结构。
+- **备份机制**：执行修改前自动生成`.treenamer_backup`文件夹保存原始结构。
 - **路径格式**：编辑时使用`/`作为路径分隔符，应用时自动适配操作系统。
 - **权限问题**：修改系统保护目录时需手动授权。
 
@@ -93,8 +89,4 @@ npm start
 
 ## 许可证
 
-[MIT License](LICENSE) © 2024 TreeSync Team
-
----
-
-请回复 `继续`，我将输出第二份文档（**产品设计文档**）。
+[MIT License](LICENSE) © 2024 TreeNamer Team

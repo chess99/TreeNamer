@@ -1,27 +1,26 @@
-# TreeSync 技术方案设计
+# TreeNamer 技术方案设计
 
 ## 一、系统架构
 
 ### 1. 整体架构图
 
 ```plaintext
-+-----------------------+
-|      Renderer进程      |
-| (Electron + React UI) |
-+-----------------------+
-|  - 目录树编辑器        |  ← 基于Monaco Editor
-|  - Diff对比视图        |  ← 集成diff-match-patch
-|  - 用户交互逻辑        |
-+----------+------------+
-           ↑ IPC通信
-+----------+------------+
-|       Main进程         |
-| (Node.js核心逻辑)      |
-+-----------------------+
-|  - 文件系统操作        |  ← fs/path模块
-|  - 目录树解析器        |  ← 自定义递归扫描器
-|  - 备份/回滚管理器     |
-+-----------------------+
++-------------------------+
+|      前端 (Web View)     |
+|     (Tauri + React UI)  |
++-------------------------+
+|  - 目录树编辑器          |  ← 基于Monaco Editor
+|  - Diff对比视图          |  ← 集成diff-match-patch
+|  - 用户交互逻辑          |
++------------+------------+
+             ↑ Tauri API 调用
++------------+------------+
+|       后端 (Rust)        |
++-------------------------+
+|  - 文件系统操作          |  ← std::fs模块
+|  - 目录树解析器          |  ← 自定义递归扫描器
+|  - 备份/回滚管理器       |
++-------------------------+
 ```
 
 ## 二、核心模块设计
@@ -34,19 +33,27 @@
 - **输出**：标准化目录树文本（符合tree命令格式）  
 - **示例**：
 
-  ```javascript
-  // 生成逻辑
-  parseDirectory('/projects', {
-    maxDepth: 5,          // 最大扫描深度
-    exclude: /node_modules/ // 排除规则
+  ```rust
+  // 生成逻辑 (Rust)
+  fn parse_directory(path: &str, options: DirectoryOptions) -> Result<String, Error> {
+    // 实现目录解析逻辑
+  }
+  
+  // 前端调用 (JavaScript)
+  invoke('parse_directory', { 
+    path: '/projects',
+    options: {
+      maxDepth: 5,
+      exclude: 'node_modules'
+    }
   });
   ```
 
 #### 关键技术点
 
-- **递归扫描**：使用`fs.readdirSync`+`fs.statSync`遍历目录
+- **递归扫描**：使用`std::fs::read_dir`遍历目录
 - **符号统一化**：将Windows路径分隔符`\`转换为`/`
-- **性能优化**：对10万级文件目录启用分块渲染（Web Worker）
+- **性能优化**：利用Rust的并行迭代器处理大型目录
 
 ### 2. 编辑器内核
 
@@ -56,7 +63,7 @@
 // 初始化双编辑器实例
 const originalEditor = monaco.editor.create(leftPanel, {
   value: initialTreeText,
-  readOnly: true,        // 左侧只读
+  readOnly: true, // 左侧只读
   minimap: { enabled: false }
 });
 
@@ -117,57 +124,63 @@ interface DiffMarker {
 
 ```mermaid
 sequenceDiagram
-  用户->>+Main进程: 点击"应用修改"
-  Main进程->>+备份管理器: 创建备份(.treesync_backup)
-  备份管理器-->>-Main进程: 返回备份路径
-  Main进程->>+操作队列: 生成原子操作列表
+  用户->>+前端: 点击"应用修改"
+  前端->>+Rust后端: 调用apply_changes API
+  Rust后端->>+备份管理器: 创建备份(.treenamer_backup)
+  备份管理器-->>-Rust后端: 返回备份路径
+  Rust后端->>+操作队列: 生成原子操作列表
   loop 每个操作
     操作队列->>文件系统: 执行rename/mkdir/rmdir
     文件系统-->>操作队列: 返回结果
   end
-  Main进程-->>-用户: 显示成功/失败报告
+  Rust后端-->>-前端: 返回操作结果
+  前端-->>-用户: 显示成功/失败报告
 ```
 
 #### 关键API
 
-```javascript
-// 原子操作类型
-type FileOperation = 
-  | { type: 'rename', from: string, to: string }
-  | { type: 'createDir', path: string }
-  | { type: 'delete', path: string };
+```rust
+enum FileOperation {
+    Rename { from: String, to: String },
+    CreateDir { path: String },
+    Delete { path: String },
+}
 
-// 执行引擎
-async function applyOperations(ops: FileOperation[]) {
-  const rollbackSteps = [];
-  try {
-    for (const op of ops) {
-      const backup = await preCheck(op); // 预检查
-      rollbackSteps.push(backup);
-      await executeOperation(op); 
+fn apply_operations(ops: Vec<FileOperation>) -> Result<(), Error> {
+    let mut rollback_steps = Vec::new();
+    
+    for op in ops {
+        let backup = pre_check(&op)?;
+        rollback_steps.push(backup);
+        execute_operation(op)?;
     }
-  } catch (error) {
-    await rollback(rollbackSteps); // 自动回滚
-    throw error;
-  }
+    
+    Ok(())
+}
+
+fn rollback(steps: Vec<RollbackStep>) -> Result<(), Error> {
+    for step in steps.iter().rev() {
+        execute_rollback(step)?;
+    }
+    Ok(())
 }
 ```
 
 ## 三、关键技术决策
 
-### 1. 跨进程通信优化
+### 1. 前后端通信优化
 
 | 场景                | 技术方案                              | 数据格式          |
 |---------------------|--------------------------------------|-------------------|
-| 目录加载            | `ipcMain.handle` + 流式传输          | 分块JSON          |
-| 实时Diff计算        | 渲染进程自主处理，避免IPC延迟         | 无                |
-| 大文件操作进度反馈  | `ipcRenderer.invoke` + 事件订阅       | 进度百分比        |
+| 目录加载            | Tauri命令API + 流式传输              | JSON              |
+| 实时Diff计算        | 前端自主处理，避免跨进程延迟          | 无                |
+| 大文件操作进度反馈  | Tauri事件系统                        | 进度百分比        |
 
 ### 2. 安全防护设计
 
 - **路径校验**：禁止操作系统保护目录（如`/System`、`C:\Windows`）
 - **符号链接处理**：默认跳过符号链接，提供选项开关
-- **操作隔离**：沙箱模式中执行高风险操作（Electron `sandbox: true`）
+- **权限控制**：利用Tauri的细粒度权限系统限制文件访问范围
 
 ## 四、性能优化策略
 
@@ -175,7 +188,7 @@ async function applyOperations(ops: FileOperation[]) {
 |---------------------|--------------------------------------|-------------------|
 | 目录树渲染          | 虚拟滚动（react-window）             | 1万节点60fps      |
 | Diff计算            | Web Worker并行计算                   | 0延迟响应         |
-| 文件操作            | 异步队列 + 分批提交                  | 每秒1000+操作     |
+| 文件操作            | Rust并行处理 + 异步队列              | 每秒1000+操作     |
 
 ---
 
@@ -183,14 +196,16 @@ async function applyOperations(ops: FileOperation[]) {
 
 ### 1. 单元测试
 
-```javascript
-// 目录解析器测试用例
-test('解析嵌套目录', () => {
-  const tree = parseDirectory('test/fixtures/nested');
-  expect(tree).toMatchSnapshot();
-});
+```rust
+#[test]
+fn test_parse_nested_directory() {
+    let tree = parse_directory("test/fixtures/nested", Default::default()).unwrap();
+    assert!(tree.contains("nested/"));
+    assert!(tree.contains("└── child/"));
+}
+```
 
-// Diff算法测试用例
+```javascript
 test('识别目录移动', () => {
   const oldTree = 'parent/\n└── child/';
   const newTree = 'new_parent/\n└── child/';
@@ -201,40 +216,57 @@ test('识别目录移动', () => {
 
 ### 2. 端到端测试
 
-使用**Spectron**模拟用户操作：
+使用**WebdriverIO**模拟用户操作：
 
 ```javascript
-app.client
-  .dragAndDrop('#drop-zone', '/test/folder')
-  .waitForVisible('.editor')
-  .keys(['Control', 'R']) // 触发正则替换
-  .setValue('#regex-input', '\d+')
-  .click('#replace-all')
-  .click('#apply-changes')
-  .assertDirectoryEqual('/test/folder', expectedStructure);
+it('should rename files using regex', async () => {
+  await browser.url('/');
+  await $('#drop-zone').setValue('/test/folder');
+  await $('.editor').waitForDisplayed();
+  await browser.keys(['Control', 'r']);
+  await $('#regex-input').setValue('\d+');
+  await $('#replace-all').click();
+  await $('#apply-changes').click();
+});
 ```
 
 ## 六、部署与维护
 
 ### 1. 打包配置
 
-```json
-// electron-builder.json
+```toml
+[package]
+name = "treenamer"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tauri = { version = "1.5", features = ["api-all"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+[build-dependencies]
+tauri-build = { version = "1.5", features = [] }
+
 {
-  "asar": true,
-  "files": ["dist/**/*", "node_modules/**/*"],
-  "win": {
-    "target": "nsis",
-    "icon": "build/icon.ico"
+  "build": {
+    "distDir": "../dist",
+    "devPath": "http://localhost:3000"
   },
-  "mac": {
-    "target": "dmg",
-    "category": "public.app-category.developer-tools"
+  "bundle": {
+    "identifier": "com.treenamer.app",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ]
   }
 }
 ```
 
 ### 2. 更新策略
 
-- 自动更新：集成`electron-updater`
+- 自动更新：集成Tauri自动更新API
 - 渠道管理：稳定版（Stable）与测试版（Beta）双通道
