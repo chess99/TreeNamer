@@ -8,13 +8,21 @@ interface MonacoEditorProps {
   height?: string;
 }
 
-const MonacoEditor = ({ value, onChange, readOnly = false, height = '100%' }: MonacoEditorProps) => {
+const MonacoEditor = ({ 
+  value, 
+  onChange, 
+  readOnly = false, 
+  height = '100%'
+}: MonacoEditorProps) => {
   const editorRef = useRef<HTMLDivElement>(null);
   const monacoInstanceRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
 
+  // Create editor instance
   useEffect(() => {
     if (editorRef.current) {
-      // Create editor instance
+      console.log("[MonacoEditor] Creating editor instance");
+
+      // Create editor instance with minimal configuration
       monacoInstanceRef.current = monaco.editor.create(editorRef.current, {
         value,
         language: 'plaintext',
@@ -23,10 +31,10 @@ const MonacoEditor = ({ value, onChange, readOnly = false, height = '100%' }: Mo
         lineNumbers: 'on',
         readOnly,
         automaticLayout: true,
-        wordWrap: 'off',
-        theme: window.matchMedia('(prefers-color-scheme: dark)').matches ? 'vs-dark' : 'vs',
         fontSize: 14,
-        fontFamily: 'var(--font-mono)',
+        fontFamily: 'monospace',
+        mouseStyle: 'text',
+        wordWrap: 'off'
       });
 
       // Add change event listener
@@ -45,11 +53,12 @@ const MonacoEditor = ({ value, onChange, readOnly = false, height = '100%' }: Mo
       mediaQuery.addEventListener('change', handleThemeChange);
 
       return () => {
+        console.log("[MonacoEditor] Disposing editor instance");
         mediaQuery.removeEventListener('change', handleThemeChange);
         monacoInstanceRef.current?.dispose();
       };
     }
-  }, [value, onChange, readOnly]);
+  }, []);
 
   // Update editor value when prop changes
   useEffect(() => {
