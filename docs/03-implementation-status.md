@@ -23,12 +23,10 @@ This document provides an overview of the current implementation status of the T
 
 #### Backup System (`backup.rs`)
 
-- ✅ Creating backups with timestamps
-- ✅ Listing available backups
-- ✅ Restoring from backup
-- ✅ Backup directory management
-- ✅ Virtual tree backups (lightweight JSON-based backups)
-- ✅ Centralized backup storage
+- ✅ Creating virtual tree backups
+- ✅ Centralized backup storage in user app data directories
+- ✅ Undo functionality for most recent changes
+- ✅ Automatic backup cleanup (limiting number of backups)
 
 ### Frontend Features (React)
 
@@ -51,7 +49,7 @@ This document provides an overview of the current implementation status of the T
 - ✅ Directory settings modal
 - ✅ Confirmation dialog for applying changes
 - ✅ Notifications for feedback
-- ✅ Backup management UI
+- ✅ Undo button for reverting recent changes
 
 #### State Management
 
@@ -60,7 +58,7 @@ This document provides an overview of the current implementation status of the T
 - ✅ Error handling
 - ✅ Loading state management
 - ✅ Change application
-- ✅ Backup management
+- ✅ Undo support
 
 ## Recent Improvements
 
@@ -69,21 +67,22 @@ This document provides an overview of the current implementation status of the T
    - Improved feedback with notifications system
    - Enhanced UI with loading indicators and disabled states
 
-2. **Backup Management**
-   - Added UI for viewing and restoring backups
-   - Implemented automatic backup creation before changes
-   - Added timestamp-based backup naming
+2. **Simplified Backup and Undo System**
+   - Replaced complex backup management with a simple undo function
+   - Implemented lightweight JSON-based virtual backups
+   - Added automatic cleanup of old backups
+   - Configured centralized backup storage in platform-specific app data directories
+   - Improved user experience with simplified undo workflow
 
 3. **User Experience Enhancements**
    - Added real-time change preview
    - Improved error handling and feedback
    - Enhanced dark mode support
 
-4. **Virtual Backup System**
-   - Added lightweight JSON-based tree structure backups
-   - Implemented central backup storage in platform-specific app data directories
+4. **Performance Optimizations**
    - Reduced backup size and creation time for large directories
    - Added entity ID tracking for improved structure restoration
+   - Optimized change detection algorithm
 
 ## Next Steps
 
@@ -113,7 +112,7 @@ This document provides an overview of the current implementation status of the T
 
 2. **Batch Operations**
    - Support for batch renaming with patterns
-   - Improved undo/redo functionality
+   - Improved undo/redo functionality (multiple steps)
    - Operation history
 
 3. **Configuration and Preferences**

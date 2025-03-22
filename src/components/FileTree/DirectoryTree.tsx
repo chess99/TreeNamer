@@ -6,7 +6,7 @@ import TreeView from './TreeView';
 
 interface DirectoryTreeProps {
   originalTree: string;
-  onApplyChanges: (modifiedTree: string) => void;
+  onApplyChanges: (modifiedTree: string) => Promise<void>;
   isLoading: boolean;
   error: string | null;
 }
@@ -39,6 +39,25 @@ const DirectoryTree = ({ originalTree, onApplyChanges, isLoading, error }: Direc
       return () => clearTimeout(timer);
     }
   }, [error]);
+
+  // Monitor loading state changes
+  useEffect(() => {
+    console.log("Loading state changed:", isLoading);
+    if (isLoading) {
+      // When loading starts, show the notification
+      setNotification({ type: 'info', message: 'Applying changes...' });
+    } else if (notification?.type === 'info' && notification?.message === 'Applying changes...') {
+      // When loading ends and we still have the loading notification, clear it or show success
+      console.log("Loading finished, updating notification");
+      setNotification({ type: 'success', message: 'Changes applied successfully!' });
+      // Auto-hide after 5 seconds
+      const timer = setTimeout(() => {
+        console.log("Auto-clearing notification after loading finished");
+        setNotification(null);
+      }, 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [isLoading, notification]);
 
   // Handle parsing of operations
   useEffect(() => {
@@ -103,8 +122,16 @@ const DirectoryTree = ({ originalTree, onApplyChanges, isLoading, error }: Direc
   };
 
   const confirmApplyChanges = () => {
-    setNotification({ type: 'info', message: 'Applying changes...' });
-    onApplyChanges(modifiedTree);
+    console.log('Confirming apply changes...');
+    
+    // The notification will be handled by the loading state effect
+    // We just need to call the apply changes function and close the dialog
+    onApplyChanges(modifiedTree)
+      .catch((error) => {
+        console.error('Error occurred while applying changes', error);
+        // Errors will be handled by the error effect
+      });
+      
     setShowConfirmDialog(false);
   };
 

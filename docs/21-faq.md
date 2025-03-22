@@ -35,15 +35,17 @@ TreeNamer 使用 Rust 实现高效的目录遍历和操作，并通过以下优�
 
 是的，TreeNamer 支持通过内置的正则表达式替换功能进行批量重命名。在编辑器模式下，按 `Ctrl+H` (Windows/Linux) 或 `Cmd+H` (Mac) 打开替换对话框，启用正则表达式选项，然后输入匹配模式和替换文本。
 
-### TreeNamer 会自动备份我的文件吗？
+### TreeNamer 如何防止错误操作？
 
-是的，TreeNamer 会在实际文件系统上应用更改之前自动创建备份。这些备份有两种类型：
+TreeNamer 提供了安全措施来防止意外操作：
 
-1. **虚拟树备份**（默认）：只存储目录结构的JSON表示，不复制实际文件。这种类型的备份非常轻量，即使对于大型目录也能快速创建，并存储在中央位置（如Windows上的`%APPDATA%\TreeNamer\backups`）。
+1. **虚拟备份和撤销功能**：每次应用更改前，TreeNamer 会自动创建当前目录结构的轻量级虚拟备份。如果您对更改不满意，可以使用撤销功能快速恢复到之前的状态。
 
-2. **完整文件备份**：如果需要，也可以创建包含所有文件的完整备份。
+2. **预览更改**：应用更改前，您可以预览将执行的操作，确保它们符合您的预期。
 
-您可以通过"备份"选项卡访问和管理这些备份，如果需要，还可以轻松恢复到之前的状态。
+3. **确认对话框**：对文件系统进行重大更改时会显示确认对话框。
+
+虚拟备份不复制实际文件内容，只保存目录结构信息，因此速度快且不占用大量空间。备份存储在用户配置目录中（例如 Windows 上的 `%APPDATA%\TreeNamer\backups`），不会干扰您的工作目录。
 
 ### 是否可以仅预览更改而不实际应用它们？
 
@@ -88,16 +90,14 @@ TreeNamer 使用唯一 ID 和路径映射来跟踪文件系统实体。当您在
 2. **非法文件名**：检查是否使用了非法字符或保留名称（如 Windows 上的 CON、PRN 等）。
 3. **编辑未保存**：确保最近的编辑已应用到预览中（编辑器会自动实时更新，但有时可能需要点击编辑区域外部触发更新）。
 
-### 如何恢复文件系统更改？
+### 如何撤销已应用的更改？
 
-如果您应用了不希望的更改，可以通过以下方式恢复：
+如果您应用了不希望的更改，可以通过以下方式撤销：
 
-1. 转到"备份"选项卡
-2. 找到应用更改之前创建的备份（按时间戳排序）
-3. 选择该备份并点击"恢复"按钮
-4. 确认恢复操作
+1. 在应用更改后，点击"撤销"按钮
+2. 系统将自动恢复到应用更改前的状态
 
-恢复会将整个目录结构恢复到备份时的状态。
+注意，TreeNamer 仅支持撤销最近的一次更改。如果您已经进行了多次操作，或者关闭并重新打开了应用，则无法使用撤销功能。在进行重大更改前，建议先预览操作。
 
 ## 排障和性能
 
@@ -153,12 +153,23 @@ If you encounter a "byte index is not a char boundary" error when applying direc
 4. 查看应用程序日志（通常位于用户目录下的 `.treenamer/logs`）
 5. 在项目 GitHub 上报告问题
 
-### How does TreeNamer back up my files?
+### How does TreeNamer prevent accidental changes?
 
-Yes, TreeNamer automatically creates backups before applying any changes to the actual file system. There are two types of backups:
+TreeNamer provides multiple safeguards to prevent unwanted changes:
 
-1. **Virtual Tree Backups** (default): These only store a JSON representation of the directory structure without copying actual files. This type of backup is very lightweight and can be created quickly even for large directories. They are stored in a central location (e.g., `%APPDATA%\TreeNamer\backups` on Windows).
+1. **Virtual backups and undo functionality**: Before applying any changes, TreeNamer automatically creates a lightweight virtual backup of your current directory structure. If you're not satisfied with the changes, you can use the undo feature to quickly revert to the previous state.
 
-2. **Full File Backups**: If needed, complete backups including all files can also be created.
+2. **Change preview**: Before applying changes, you can preview the operations that will be performed, ensuring they match your intentions.
 
-You can access and manage these backups through the "Backups" tab, and easily restore to a previous state if necessary.
+3. **Confirmation dialogs**: Significant file system changes require confirmation.
+
+Virtual backups don't copy actual file contents, only storing directory structure information, making them fast and space-efficient. They're stored in your user configuration directory (e.g., `%APPDATA%\TreeNamer\backups` on Windows), keeping your working directory clean.
+
+### How do I undo changes I've already applied?
+
+If you've applied changes that you want to reverse:
+
+1. After applying changes, click the "Undo" button
+2. The system will automatically restore the state from before your most recent change
+
+Note that TreeNamer only supports undoing the most recent change. If you've made multiple operations or closed and reopened the application, the undo function won't be available. For major changes, it's recommended to preview the operations first.

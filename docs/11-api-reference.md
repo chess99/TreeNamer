@@ -13,6 +13,7 @@ TreeNamer 的 Rust 后端通过 Tauri 命令暴露以下功能：
 解析目录并生成树形表示。
 
 **参数：**
+
 - `path: String` - 要解析的目录路径
 - `options: DirectoryOptions` - 目录解析选项
 
@@ -26,9 +27,11 @@ interface DirectoryOptions {
 ```
 
 **返回值：**
+
 - `Result<String, String>` - 成功时返回树形文本，失败时返回错误信息
 
 **示例：**
+
 ```javascript
 const tree = await invoke('parse_directory', {
   path: '/path/to/directory',
@@ -48,11 +51,13 @@ const tree = await invoke('parse_directory', {
 应用文件系统操作（重命名、创建、删除）。
 
 **参数：**
+
 - `path: String` - 基础目录路径
 - `original_tree: String` - 原始目录树文本
 - `modified_tree: String` - 修改后的目录树文本
 
 **返回值：**
+
 - `Result<Vec<OperationResult>, String>` - 成功时返回操作结果数组，失败时返回错误信息
 
 ```rust
@@ -63,6 +68,7 @@ pub struct OperationResult {
 ```
 
 **示例：**
+
 ```javascript
 const results = await invoke('apply_operations', {
   path: '/path/to/directory',
@@ -76,11 +82,13 @@ const results = await invoke('apply_operations', {
 生成但不执行文件系统操作。
 
 **参数：**
+
 - `path: String` - 基础目录路径
 - `original_tree: String` - 原始目录树文本
 - `modified_tree: String` - 修改后的目录树文本
 
 **返回值：**
+
 - `Result<Vec<FileOperation>, String>` - 成功时返回操作数组，失败时返回错误信息
 
 ```typescript
@@ -99,6 +107,7 @@ interface FileOperation {
 ```
 
 **示例：**
+
 ```javascript
 const operations = await invoke('generate_operations', {
   path: '/path/to/directory',
@@ -111,17 +120,28 @@ const operations = await invoke('generate_operations', {
 
 #### `create_backup`
 
-创建目录的备份。
+创建目录的虚拟备份。
 
 **参数：**
+
 - `path: String` - 要备份的目录路径
+- `tree_text: Option<String>` - 可选的目录树文本。如果提供，将用于创建虚拟备份；如果不提供，系统将尝试自动生成
 
 **返回值：**
-- `Result<String, String>` - 成功时返回备份路径，失败时返回错误信息
+
+- `Result<BackupInfo, String>` - 成功时返回备份信息（包含路径、时间戳和类型），失败时返回错误信息
 
 **示例：**
+
 ```javascript
-const backupPath = await invoke('create_backup', {
+// 提供tree_text（推荐，更可靠）
+const backupInfo = await invoke('create_backup', {
+  path: '/path/to/directory',
+  tree_text: treeContent
+});
+
+// 或者让系统自动生成tree_text（可能在某些情况下失败）
+const backupInfo = await invoke('create_backup', {
   path: '/path/to/directory'
 });
 ```
@@ -131,9 +151,11 @@ const backupPath = await invoke('create_backup', {
 列出可用的备份。
 
 **参数：**
+
 - `path: String` - 目录路径
 
 **返回值：**
+
 - `Result<Vec<BackupInfo>, String>` - 成功时返回备份信息数组，失败时返回错误信息
 
 ```typescript
@@ -145,6 +167,7 @@ interface BackupInfo {
 ```
 
 **示例：**
+
 ```javascript
 const backups = await invoke('list_backups', {
   path: '/path/to/directory'
@@ -156,13 +179,16 @@ const backups = await invoke('list_backups', {
 从备份恢复目录。
 
 **参数：**
+
 - `backup_path: String` - 备份路径
 - `target_path: String` - 恢复目标路径
 
 **返回值：**
+
 - `Result<bool, String>` - 成功时返回 true，失败时返回错误信息
 
 **示例：**
+
 ```javascript
 const success = await invoke('restore_backup', {
   backup_path: backupPath,
@@ -181,6 +207,7 @@ TreeNamer 前端提供以下主要 API：
 用于管理目录状态的 Zustand store。
 
 **状态：**
+
 ```typescript
 interface DirectoryState {
   path: string | null;
@@ -199,6 +226,7 @@ interface DirectoryState {
 ```
 
 **示例：**
+
 ```javascript
 import { useDirectoryStore } from '../store/directoryStore';
 
@@ -233,6 +261,7 @@ const results = await applyOperations();
 用于管理备份的 Zustand store。
 
 **状态：**
+
 ```typescript
 interface BackupState {
   backups: BackupInfo[];
@@ -247,6 +276,7 @@ interface BackupState {
 ```
 
 **示例：**
+
 ```javascript
 import { useBackupStore } from '../store/backupStore';
 
@@ -275,11 +305,13 @@ const success = await restoreBackup(backupPath, '/path/to/directory');
 Tree 相关工具函数。
 
 **方法：**
+
 - `parsePlainText(text: string): TreeNode[]` - 将文本转换为树节点数组
 - `formatNodes(nodes: TreeNode[]): string` - 将树节点数组格式化为文本
 - `findDifferences(original: string, modified: string): Difference[]` - 查找差异
 
 **示例：**
+
 ```javascript
 import { TreeUtils } from '../utils/treeUtils';
 
@@ -298,11 +330,13 @@ const diffs = TreeUtils.findDifferences(originalText, modifiedText);
 文件系统实用工具。
 
 **方法：**
+
 - `isValidPath(path: string): boolean` - 检查路径是否有效
 - `sanitizeFileName(name: string): string` - 净化文件名（移除非法字符）
 - `getRelativePath(base: string, full: string): string` - 获取相对路径
 
 **示例：**
+
 ```javascript
 import { FileSystemUtils } from '../utils/fsUtils';
 
@@ -354,4 +388,4 @@ const unlisten = await listen('fs-change', (event) => {
 onUnmount(() => {
   unlisten();
 });
-``` 
+```

@@ -5,15 +5,8 @@ import DirectoryTree from "./components/FileTree/DirectoryTree";
 import DirectorySettings from "./components/Settings/DirectorySettings";
 import { useDirectoryStore } from "./store/directoryStore";
 
-// Define the BackupInfo interface
-interface BackupInfo {
-  path: string;
-  timestamp: number;
-}
-
 function App() {
   const [showSettings, setShowSettings] = useState(false);
-  const [showBackups, setShowBackups] = useState(false);
   
   const { 
     directoryPath, 
@@ -24,9 +17,8 @@ function App() {
     loadDirectory, 
     applyChanges,
     resetError,
-    backups,
-    loadBackups,
-    restoreBackup
+    undoLastChange,
+    lastBackupPath
   } = useDirectoryStore();
 
   // Reset error when directoryPath changes
@@ -34,12 +26,16 @@ function App() {
     resetError();
   }, [directoryPath, resetError]);
 
-  // Load backups when directory path changes
+  // Log state changes for debugging
   useEffect(() => {
-    if (directoryPath) {
-      loadBackups();
-    }
-  }, [directoryPath, loadBackups]);
+    console.log("App state updated:", { 
+      directoryPath, 
+      hasTree: !!originalTree,
+      isLoading,
+      hasError: !!error,
+      hasBackup: !!lastBackupPath
+    });
+  }, [directoryPath, originalTree, isLoading, error, lastBackupPath]);
 
   const handleOpenDirectory = async () => {
     try {
@@ -90,50 +86,22 @@ function App() {
         }} disabled={isLoading || !directoryPath}>
           Settings
         </button>
-        {backups.length > 0 && (
-          <button type="button" onClick={() => setShowBackups(true)} disabled={isLoading}>
-            Backups ({backups.length})
-          </button>
-        )}
+        <button 
+          type="button" 
+          onClick={() => {
+            console.log("Undo button clicked");
+            undoLastChange();
+          }} 
+          disabled={isLoading || !directoryPath || !lastBackupPath}
+        >
+          {isLoading ? "Processing..." : "Undo"}
+        </button>
       </div>
 
       {showSettings && (
         <div className="modal-overlay">
           <div className="modal-content">
             <DirectorySettings onClose={() => setShowSettings(false)} />
-          </div>
-        </div>
-      )}
-
-      {showBackups && (
-        <div className="modal-overlay">
-          <div className="modal-content">
-            <div className="backup-manager">
-              <h2>Backup Manager</h2>
-              <p>Select a backup to restore:</p>
-              <ul className="backup-list">
-                {backups.map((backup: BackupInfo, index: number) => {
-                  const date = new Date(backup.timestamp * 1000).toLocaleString();
-                  return (
-                    <li key={index}>
-                      <span className="backup-date">{date}</span>
-                      <button 
-                        onClick={() => {
-                          restoreBackup(backup.path);
-                          setShowBackups(false);
-                        }}
-                        disabled={isLoading}
-                      >
-                        Restore
-                      </button>
-                    </li>
-                  );
-                })}
-              </ul>
-              <div className="modal-actions">
-                <button onClick={() => setShowBackups(false)}>Close</button>
-              </div>
-            </div>
           </div>
         </div>
       )}

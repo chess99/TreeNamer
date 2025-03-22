@@ -264,25 +264,30 @@ The previous backup system created full copies of the entire directory structure
 - Consumed significant disk space, especially for large directories
 - Took considerable time to complete for directories with many files
 - Created backups in the source directory, cluttering the user's workspace
+- Added complexity with multiple backup management and restoration
 
 ### Decision
-We've implemented a "virtual backup" system that:
+We've implemented a simplified "virtual backup" system that:
 1. Stores only the directory tree structure as JSON, not the actual file contents
 2. Uses unique IDs to track file and directory entities
 3. Stores backups in a central application data location instead of in the source directory
-4. Allows restoring from these virtual backups by generating and applying the necessary file operations
+4. Provides a simple undo function for the most recent change instead of complex backup management
+5. Automatically cleans up old backups, keeping only a reasonable number of recent ones
 
 ### Consequences
 Positive:
 - Dramatically reduced backup size and creation time
 - Centralized backup management
 - Less clutter in user directories
+- Simplified user experience with a clear "undo" functionality
 - Consistent backup location across sessions
+- Automatic cleanup prevents excessive storage usage
 
 Negative:
+- Only the most recent change can be undone
 - Restoring from virtual backups doesn't restore file contents (only structure)
-- Slightly more complex implementation
-- Need for robust entity ID tracking
+- Undo history is lost when the application is closed and reopened
+- Slightly more complex implementation for tracking the most recent state
 
 ### Implementation Notes
 The virtual backup system:
@@ -291,5 +296,6 @@ The virtual backup system:
   - Windows: `%APPDATA%\TreeNamer\backups`
   - macOS: `~/Library/Application Support/TreeNamer/backups`
   - Linux: `~/.treenamer/backups`
-- Preserves the option for full backups when needed
+- Keeps only the most recent 20 backups per directory
 - Uses JSON for human-readable backup format
+- Stores state in the frontend for quick access to undo functionality
