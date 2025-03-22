@@ -3,6 +3,7 @@ use std::fs;
 use tauri::command;
 use serde::{Serialize, Deserialize};
 use std::collections::HashMap;
+use std::collections::HashSet;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub enum FileOperation {
@@ -201,31 +202,259 @@ fn generate_operations(
     let mut operations = Vec::new();
     let base = Path::new(base_path);
     
-    // Find deleted paths
-    for (path, is_dir) in original_paths {
-        if !modified_paths.contains_key(path) {
-            let full_path = base.join(path);
-            operations.push(FileOperation::Delete { 
-                path: full_path.to_string_lossy().to_string() 
-            });
+    // Track paths that have been processed
+    let mut processed_original = HashSet::new();
+    let mut processed_modified = HashSet::new();
+    
+    // Find common parent directories for potential renames
+    let mut original_dirs: Vec<_> = original_paths.iter()
+        .filter(|(_, &is_dir)| is_dir)
+        .map(|(path, _)| path)
+        .collect();
+    
+    let mut modified_dirs: Vec<_> = modified_paths.iter()
+        .filter(|(_, &is_dir)| is_dir)
+        .map(|(path, _)| path)
+        .collect();
+    
+    // Sort by path length (descending) to process deepest paths first
+    original_dirs.sort_by(|a, b| b.len().cmp(&a.len()));
+    modified_dirs.sort_by(|a, b| b.len().cmp(&a.len()));
+    
+    // Step 1: Detect directory renames by comparing contents
+    for original_dir in &original_dirs {
+        if processed_original.contains(*original_dir) {
+            continue;
+        }
+        
+        let original_children = get_children(original_paths, original_dir);
+        
+        for modified_dir in &modified_dirs {
+            if processed_modified.contains(*modified_dir) || original_dir == modified_dir {
+                continue;
+            }
+            
+            let modified_children = get_children(modified_paths, modified_dir);
+            
+            // Calculate similarity between directories
+            if is_similar_directory(&original_children, &modified_children, 0.7) {
+                // We found a probable directory rename
+                processed_original.insert((*original_dir).clone());
+                processed_modified.insert((*modified_dir).clone());
+                
+                // Add the rename operation
+                operations.push(FileOperation::Rename { 
+                    from: base.join(original_dir).to_string_lossy().to_string(),
+                    to: base.join(modified_dir).to_string_lossy().to_string()
+                });
+                
+                // Mark all children as processed so we don't process them again
+                for child in original_children.keys() {
+                    processed_original.insert(child.clone());
+                }
+                
+                for child in modified_children.keys() {
+                    processed_modified.insert(child.clone());
+                }
+                
+                break;
+            }
         }
     }
     
-    // Find new paths (directories first)
-    for (path, is_dir) in modified_paths {
-        if !original_paths.contains_key(path) && *is_dir {
-            let full_path = base.join(path);
+    // Step 2: Look for file renames by comparing name similarity
+    let original_files: Vec<_> = original_paths.iter()
+        .filter(|(path, &is_dir)| !is_dir && !processed_original.contains(*path))
+        .collect();
+    
+    let modified_files: Vec<_> = modified_paths.iter()
+        .filter(|(path, &is_dir)| !is_dir && !processed_modified.contains(*path))
+        .collect();
+    
+    // For each original file that wasn't processed yet
+    for (original_path, _) in &original_files {
+        if processed_original.contains(*original_path) {
+            continue;
+        }
+        
+        let original_name = Path::new(original_path).file_name()
+            .map(|name| name.to_string_lossy().to_string())
+            .unwrap_or_default();
+            
+        let parent_path = Path::new(original_path).parent()
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_default();
+        
+        // Find the most similar file in the modified files
+        let mut best_match = None;
+        let mut best_similarity = 0.0;
+        
+        for (modified_path, _) in &modified_files {
+            if processed_modified.contains(*modified_path) {
+                continue;
+            }
+            
+            let modified_name = Path::new(modified_path).file_name()
+                .map(|name| name.to_string_lossy().to_string())
+                .unwrap_or_default();
+                
+            let modified_parent = Path::new(modified_path).parent()
+                .map(|p| p.to_string_lossy().to_string())
+                .unwrap_or_default();
+            
+            // Check if files are in the same or similar directory
+            if parent_path == modified_parent || processed_original.contains(&parent_path) {
+                let similarity = name_similarity(&original_name, &modified_name);
+                
+                if similarity > 0.5 && similarity > best_similarity {
+                    best_similarity = similarity;
+                    best_match = Some(modified_path);
+                }
+            }
+        }
+        
+        if let Some(modified_path) = best_match {
+            // Add rename operation
+            operations.push(FileOperation::Rename { 
+                from: base.join(original_path).to_string_lossy().to_string(),
+                to: base.join(modified_path).to_string_lossy().to_string()
+            });
+            
+            processed_original.insert((*original_path).clone());
+            processed_modified.insert((*modified_path).clone());
+        }
+    }
+    
+    // Step 3: Add creation operations for new directories
+    for (path, &is_dir) in modified_paths {
+        if !processed_modified.contains(path) && is_dir && !original_paths.contains_key(path) {
             operations.push(FileOperation::CreateDir { 
-                path: full_path.to_string_lossy().to_string() 
+                path: base.join(path).to_string_lossy().to_string() 
             });
+            processed_modified.insert(path.clone());
         }
     }
     
-    // Find renamed paths
-    // This is a simple implementation that doesn't handle complex renames
-    // A more sophisticated algorithm would be needed for that
+    // Step 4: Add creation operations for new files
+    for (path, &is_dir) in modified_paths {
+        if !processed_modified.contains(path) && !is_dir && !original_paths.contains_key(path) {
+            // This is a new file - but it might be created as part of a parent directory creation
+            let parent = Path::new(path).parent().map(|p| p.to_string_lossy().to_string());
+            if let Some(parent_path) = parent {
+                if !processed_modified.contains(&parent_path) && modified_paths.contains_key(&parent_path) {
+                    // Parent will be created, we don't need a separate operation
+                    processed_modified.insert(path.clone());
+                    continue;
+                }
+            }
+            
+            // Create file (handled by the backend as copy from an empty file)
+            operations.push(FileOperation::CreateDir { 
+                path: base.join(path).to_string_lossy().to_string() 
+            });
+            processed_modified.insert(path.clone());
+        }
+    }
+    
+    // Step 5: Add deletion operations
+    for (path, &is_dir) in original_paths {
+        if !processed_original.contains(path) {
+            operations.push(FileOperation::Delete { 
+                path: base.join(path).to_string_lossy().to_string() 
+            });
+            processed_original.insert(path.clone());
+        }
+    }
+    
+    // Sort operations for correct application order
+    // 1. First create directories
+    // 2. Then rename files/directories
+    // 3. Finally delete files/directories
+    operations.sort_by(|a, b| {
+        match (a, b) {
+            (FileOperation::CreateDir { .. }, FileOperation::Rename { .. }) => std::cmp::Ordering::Less,
+            (FileOperation::CreateDir { .. }, FileOperation::Delete { .. }) => std::cmp::Ordering::Less,
+            (FileOperation::Rename { .. }, FileOperation::Delete { .. }) => std::cmp::Ordering::Less,
+            (FileOperation::Rename { .. }, FileOperation::CreateDir { .. }) => std::cmp::Ordering::Greater,
+            (FileOperation::Delete { .. }, FileOperation::CreateDir { .. }) => std::cmp::Ordering::Greater,
+            (FileOperation::Delete { .. }, FileOperation::Rename { .. }) => std::cmp::Ordering::Greater,
+            _ => std::cmp::Ordering::Equal,
+        }
+    });
     
     Ok(operations)
+}
+
+// Helper function to get all children of a directory
+fn get_children(paths: &HashMap<String, bool>, dir_path: &str) -> HashMap<String, bool> {
+    let mut children = HashMap::new();
+    let prefix = if dir_path.ends_with('/') { dir_path } else { &format!("{}/", dir_path) };
+    
+    for (path, &is_dir) in paths {
+        if path != dir_path && path.starts_with(prefix) {
+            children.insert(path.clone(), is_dir);
+        }
+    }
+    
+    children
+}
+
+// Helper function to check if two directories are similar based on their children
+fn is_similar_directory(dir1: &HashMap<String, bool>, dir2: &HashMap<String, bool>, threshold: f64) -> bool {
+    if dir1.is_empty() && dir2.is_empty() {
+        return true;
+    }
+    
+    if dir1.is_empty() || dir2.is_empty() {
+        return false;
+    }
+    
+    // Get all filenames from both directories
+    let names1: HashSet<_> = dir1.keys()
+        .filter_map(|path| Path::new(path).file_name())
+        .map(|name| name.to_string_lossy().to_string())
+        .collect();
+    
+    let names2: HashSet<_> = dir2.keys()
+        .filter_map(|path| Path::new(path).file_name())
+        .map(|name| name.to_string_lossy().to_string())
+        .collect();
+    
+    // Calculate Jaccard similarity (intersection / union)
+    let intersection = names1.intersection(&names2).count() as f64;
+    let union = names1.union(&names2).count() as f64;
+    
+    intersection / union >= threshold
+}
+
+// Helper function to calculate string similarity
+fn name_similarity(name1: &str, name2: &str) -> f64 {
+    if name1 == name2 {
+        return 1.0;
+    }
+    
+    // Simple similarity measure: length of longest common substring / max length
+    let len1 = name1.chars().count();
+    let len2 = name2.chars().count();
+    
+    if len1 == 0 || len2 == 0 {
+        return 0.0;
+    }
+    
+    // Find common prefix
+    let common_prefix_len = name1.chars().zip(name2.chars())
+        .take_while(|(c1, c2)| c1 == c2)
+        .count();
+    
+    // Find common suffix
+    let common_suffix_len = name1.chars().rev().zip(name2.chars().rev())
+        .take_while(|(c1, c2)| c1 == c2)
+        .count();
+    
+    // Ensure we don't double-count in small strings
+    let common_len = std::cmp::min(common_prefix_len + common_suffix_len, std::cmp::max(len1, len2));
+    
+    common_len as f64 / std::cmp::max(len1, len2) as f64
 }
 
 #[command]
