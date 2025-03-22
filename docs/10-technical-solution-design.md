@@ -634,4 +634,4 @@ tauri-build = { version = "1.5", features = [] }
     }
   ]
 }
-```
+``` 

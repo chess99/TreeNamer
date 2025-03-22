@@ -1,87 +1,139 @@
-# TreeNamer Project Overview
+# TreeNamer 项目概述
 
-## Project Summary
+TreeNamer 是一个用于可视化和批量重命名目录结构的桌面应用程序。它允许用户以文本或树形视图的方式编辑目录结构，然后将更改应用到实际文件系统。
 
-TreeNamer is a directory tree visualization and renaming tool built with Tauri, React, and TypeScript. It allows users to edit directory structures in a text-based interface and apply those changes to the actual file system.
+## 项目愿景
 
-## Current State
+TreeNamer 旨在解决以下问题：
 
-The project is in early development with the following progress:
+1. **简化文件组织**：通过可视化和编辑目录结构，使文件组织更加直观和高效。
+2. **批量重命名**：提供强大的工具，使用户能够一次性重命名多个文件和目录。
+3. **减少错误风险**：通过预览更改和自动备份，减少批量文件操作的风险。
 
-1. **Frontend**: React application with Chakra UI v3 for styling
-2. **Backend**: Tauri with Rust for file system operations
-3. **Current Focus**: Setting up the development environment and resolving configuration issues
+## 核心功能
 
-## Technical Stack
+TreeNamer 的主要功能包括：
 
-- **Frontend**:
-  - React with TypeScript
-  - Vite as build tool
-  - Chakra UI v3 for component library
-  - Monaco Editor (planned for tree editing)
+- **目录树解析**：快速解析和显示目录结构
+- **双模式编辑**：支持文本和树形视图编辑模式
+- **即时预览**：在应用更改前查看所有操作的预览
+- **智能重命名检测**：准确识别文件和目录的重命名操作
+- **自动备份**：在应用更改前自动创建备份
+- **恢复机制**：简单的界面用于浏览和恢复备份
+- **跨平台支持**：适用于 Windows、macOS 和 Linux
 
-- **Backend**:
-  - Tauri v2 (beta)
-  - Rust for file system operations
+## 技术栈
 
-## Issues Resolved
+TreeNamer 采用现代混合技术栈：
 
-1. **Tauri Configuration**: Updated `tauri.conf.json` to use the new configuration format:
-   - Replaced `devPath` and `distDir` with `beforeDevCommand`, `beforeBuildCommand`, and `frontendDist`
-   - Added plugin configurations for `shell` and `dialog`
+- **前端**：React、TypeScript、Zustand
+- **后端**：Rust、Tauri
+- **构建工具**：Vite、Cargo
+- **UI 框架**：Chakra UI
+- **测试**：Jest、Rust Test
 
-2. **TypeScript Errors**: Fixed errors in:
-   - `TreeView.tsx`: Removed unused variables (`currentLevel`, `connector`, `isLast`)
-   - `theme.ts`: Updated to use Chakra UI v3's theming system with `createSystem`, `defineConfig`, and `mergeConfigs`
+## 项目结构
 
-3. **Build Process**: Successfully built the frontend with `pnpm build`, generating the `dist` directory
-
-## Project Structure
+项目的主要组件包括：
 
 ```
-treenamer/
-├── src/                      # Frontend React code
-│   ├── components/           # UI components
-│   │   ├── FileTree/         # Directory tree components
-│   │   └── ...               # Other components
-│   ├── styles/               # Global styles
-│   ├── App.tsx               # Main application component
-│   └── main.tsx              # Entry point
-├── src-tauri/                # Rust backend code
-│   ├── src/
-│   │   ├── main.rs           # Entry point
-│   │   ├── commands/         # Tauri commands
-│   │   │   ├── tree.rs       # Directory tree parsing
-│   │   │   └── backup.rs     # Backup management
-│   │   └── error.rs          # Error handling module
-│   ├── Cargo.toml            # Rust dependencies
-│   └── tauri.conf.json       # Tauri configuration
-├── public/                   # Static assets
-└── package.json              # Node.js dependencies
+TreeNamer/
+├── src/                  # 前端代码 (React/TypeScript)
+│   ├── components/       # React 组件
+│   ├── stores/           # Zustand 状态管理
+│   └── utils/            # 实用工具函数
+│
+├── src-tauri/            # Rust 后端代码
+│   ├── src/              # Rust 源码
+│   │   ├── commands/     # Tauri 命令实现
+│   │   ├── models/       # 数据模型
+│   │   └── main.rs       # 入口点
+│   └── Cargo.toml        # Rust 依赖管理
+│
+├── docs/                 # 项目文档
+└── tests/                # 测试文件
 ```
 
-## Key Features (Planned)
+## 系统架构
 
-1. **Directory Tree Visualization**: Display directory structure in a tree format
-2. **Interactive Editing**: Edit directory names and structure in a text-based interface
-3. **Diff View**: Show differences between original and edited directory structure
-4. **Safe Application**: Apply changes with backup and rollback capabilities
+TreeNamer 采用以下架构：
 
-## Next Steps
+1. **Rust 后端**：处理文件系统操作、目录解析和变更计算
+2. **React 前端**：提供用户界面和交互
+3. **Tauri 桥接**：连接 Rust 和 JavaScript 层
+4. **Zustand 状态管理**：管理应用状态和前后端通信
 
-1. **Implement Core Features**:
-   - Directory tree parsing and visualization
-   - Text-based editing interface
-   - Diff view for changes
-   - Safe application of changes
+该架构充分利用 Rust 的性能和安全性处理文件系统操作，同时使用 React 提供现代化的用户界面。
 
-2. **Testing and Refinement**:
-   - Test on different platforms (Windows, macOS, Linux)
-   - Refine UI and UX
-   - Add error handling and recovery mechanisms
+## 工作流程
 
-## Development Workflow
+TreeNamer 的典型工作流程如下：
 
-1. **Code on Local Machine**: Develop and test the application locally
-2. **Use Version Control**: Commit changes frequently and push to a remote repository
-3. **Test Thoroughly**: Test on different platforms and with different directory structures
+1. **打开目录**：用户选择一个目录进行处理
+2. **查看结构**：应用加载并显示目录结构
+3. **编辑**：用户通过文本或树形视图编辑目录结构
+4. **预览**：生成并显示操作预览
+5. **应用**：执行文件系统操作
+6. **备份**：自动创建备份
+7. **恢复**（可选）：如需要，可以恢复备份
+
+## 开发状态
+
+TreeNamer 目前处于活跃开发阶段，已实现的主要功能包括：
+
+- ✅ 目录树解析和显示
+- ✅ 文本编辑模式
+- ✅ 树形视图编辑模式
+- ✅ 操作预览生成
+- ✅ 基本文件系统操作
+- ✅ 自动备份系统
+- ✅ 暗色模式支持
+
+正在进行的开发工作包括：
+
+- 🔄 增强重命名检测算法
+- 🔄 性能优化
+- 🔄 用户界面改进
+
+未来计划实现的功能包括：
+
+- 📋 批量重命名模板
+- 📋 正则表达式替换
+- 📋 命令行接口
+- 📋 插件系统
+
+## 用户基础
+
+TreeNamer 主要面向以下用户群体：
+
+- **开发者**：管理代码库和项目结构
+- **内容创作者**：组织媒体文件和资产
+- **系统管理员**：管理服务器和数据目录
+- **数据分析师**：组织数据集和研究文件
+- **一般用户**：整理个人文件和文档
+
+## 项目目标
+
+TreeNamer 的长期目标是：
+
+1. **成为文件管理的首选工具**：提供专业级的目录管理功能
+2. **支持高级重命名模式**：实现复杂的批量重命名用例
+3. **建立开源社区**：鼓励社区贡献和扩展
+4. **扩展到更多平台**：支持移动设备和网页版本
+
+## 许可证
+
+TreeNamer 采用 MIT 许可证发布，鼓励社区贡献和创新。
+
+## 贡献
+
+欢迎贡献代码、报告问题或提出功能建议。请参阅 [贡献指南](30-contributing-guide.md) 了解如何参与。
+
+## 联系方式
+
+- **GitHub**：[https://github.com/yourusername/treenamer](https://github.com/yourusername/treenamer)
+- **电子邮件**：[maintainer@example.com](mailto:maintainer@example.com)
+
+---
+
+**TreeNamer** - 重新定义目录管理的未来
