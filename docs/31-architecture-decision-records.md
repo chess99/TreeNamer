@@ -253,3 +253,43 @@ TreeNamer 的核心功能是跟踪和应用文件系统变更，尤其是重命�
 - 增加设计和开发复杂性
 - 需要测试两种主题下的所有 UI 元素
 - 需要实现主题偏好存储
+
+## ADR 0XX: Virtual Backup System for Directory Trees
+
+### Status
+Accepted
+
+### Context
+The previous backup system created full copies of the entire directory structure being edited. This approach:
+- Consumed significant disk space, especially for large directories
+- Took considerable time to complete for directories with many files
+- Created backups in the source directory, cluttering the user's workspace
+
+### Decision
+We've implemented a "virtual backup" system that:
+1. Stores only the directory tree structure as JSON, not the actual file contents
+2. Uses unique IDs to track file and directory entities
+3. Stores backups in a central application data location instead of in the source directory
+4. Allows restoring from these virtual backups by generating and applying the necessary file operations
+
+### Consequences
+Positive:
+- Dramatically reduced backup size and creation time
+- Centralized backup management
+- Less clutter in user directories
+- Consistent backup location across sessions
+
+Negative:
+- Restoring from virtual backups doesn't restore file contents (only structure)
+- Slightly more complex implementation
+- Need for robust entity ID tracking
+
+### Implementation Notes
+The virtual backup system:
+- Uses UUIDs to track file/directory entities
+- Stores backups in platform-specific application data directories:
+  - Windows: `%APPDATA%\TreeNamer\backups`
+  - macOS: `~/Library/Application Support/TreeNamer/backups`
+  - Linux: `~/.treenamer/backups`
+- Preserves the option for full backups when needed
+- Uses JSON for human-readable backup format

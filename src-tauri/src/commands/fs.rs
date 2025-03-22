@@ -185,15 +185,17 @@ pub fn parse_tree_text(tree_text: &str) -> Result<HashMap<String, bool>, String>
         // Extract the name
         let name_part = line.trim_start();
         let name = if name_part.starts_with("├── ") {
-            &name_part[4..]
+            // Use Unicode-aware slicing by converting to a vector of chars first
+            name_part.chars().skip(4).collect::<String>()
         } else if name_part.starts_with("└── ") {
-            &name_part[4..]
+            // Use Unicode-aware slicing by converting to a vector of chars first
+            name_part.chars().skip(4).collect::<String>()
         } else {
-            name_part
+            name_part.to_string()
         };
         
         let is_dir = name.ends_with('/');
-        let clean_name = if is_dir { name.trim_end_matches('/') } else { name };
+        let clean_name = if is_dir { name.trim_end_matches('/').to_string() } else { name };
         
         // Update current path
         if current_path.len() == level {

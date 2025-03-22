@@ -42,6 +42,7 @@
 ### Problem Fixes
 
 - **Tauri v2 Dialog Permission**: In Tauri v2, dialog permissions must be configured in `src-tauri/capabilities/default.json` with `"dialog:default"` instead of in `tauri.conf.json`
+- **Unicode Handling in Tree Parsing**: When parsing tree structures with Unicode characters like `├──`, use character-aware methods instead of byte indices. In `parse_tree_text` function, use methods like `chars().nth()` or proper Unicode-aware slicing instead of string indexing to avoid "byte index is not a char boundary" errors.
 
 {{ARCHITECTURE_UPDATE}}
 {{BEST_PRACTICES}}

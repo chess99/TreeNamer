@@ -19,6 +19,7 @@ interface RustDirectoryOptions {
 interface BackupInfo {
   path: string;
   timestamp: number;
+  is_virtual: boolean;
 }
 
 interface DirectoryState {
@@ -101,8 +102,11 @@ export const useDirectoryStore = create<DirectoryState>((set, get) => ({
     try {
       set({ isLoading: true, error: null });
       
-      // Create a backup before applying changes
-      await invoke('create_backup', { path: directoryPath });
+      // Create a virtual backup before applying changes
+      await invoke('create_backup', { 
+        path: directoryPath,
+        tree_text: originalTree
+      });
       
       // Call the Rust function to apply the changes
       await invoke('apply_operations', { 

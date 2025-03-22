@@ -27,6 +27,8 @@ This document provides an overview of the current implementation status of the T
 - ✅ Listing available backups
 - ✅ Restoring from backup
 - ✅ Backup directory management
+- ✅ Virtual tree backups (lightweight JSON-based backups)
+- ✅ Centralized backup storage
 
 ### Frontend Features (React)
 
@@ -76,6 +78,12 @@ This document provides an overview of the current implementation status of the T
    - Added real-time change preview
    - Improved error handling and feedback
    - Enhanced dark mode support
+
+4. **Virtual Backup System**
+   - Added lightweight JSON-based tree structure backups
+   - Implemented central backup storage in platform-specific app data directories
+   - Reduced backup size and creation time for large directories
+   - Added entity ID tracking for improved structure restoration
 
 ## Next Steps
 

@@ -37,7 +37,13 @@ TreeNamer 使用 Rust 实现高效的目录遍历和操作，并通过以下优�
 
 ### TreeNamer 会自动备份我的文件吗？
 
-是的，每次在实际文件系统上应用更改之前，TreeNamer 会自动创建带有时间戳的备份。您可以通过"备份"选项卡访问和管理这些备份，如果需要，还可以轻松恢复到之前的状态。
+是的，TreeNamer 会在实际文件系统上应用更改之前自动创建备份。这些备份有两种类型：
+
+1. **虚拟树备份**（默认）：只存储目录结构的JSON表示，不复制实际文件。这种类型的备份非常轻量，即使对于大型目录也能快速创建，并存储在中央位置（如Windows上的`%APPDATA%\TreeNamer\backups`）。
+
+2. **完整文件备份**：如果需要，也可以创建包含所有文件的完整备份。
+
+您可以通过"备份"选项卡访问和管理这些备份，如果需要，还可以轻松恢复到之前的状态。
 
 ### 是否可以仅预览更改而不实际应用它们？
 
@@ -121,6 +127,22 @@ Windows 上的某些特殊目录（如 Program Files、Windows 目录）受系�
 3. 检查文件不是只读的（右键属性）
 4. 检查防病毒软件是否阻止了操作
 
+### 遇到 "byte index is not a char boundary" 错误怎么办？
+
+如果您在应用目录重命名时遇到 "byte index is not a char boundary" 错误，这通常是由于树结构文本中包含特殊 Unicode 字符（如树图形符号 ├ 和 └）导致的字符边界解析问题。最新版本已修复此问题，请确保您使用的是最新版本的 TreeNamer。如果仍然遇到此问题，请尝试：
+
+1. 避免手动编辑带有树形图形的文本
+2. 使用图形模式而非文本模式进行编辑
+3. 上报问题并附带您试图解析的目录树字符串样例
+
+### What should I do if I encounter a "byte index is not a char boundary" error?
+
+If you encounter a "byte index is not a char boundary" error when applying directory renames, this is typically caused by Unicode character boundary parsing issues in the tree structure text, especially with tree graphic symbols like ├ and └. The latest version has fixed this issue, so make sure you're using the most recent version of TreeNamer. If you still encounter this problem, try:
+
+1. Avoid manually editing text with tree graphics
+2. Use the graphical mode instead of text mode for editing
+3. Report the issue with an example of the directory tree string you're trying to parse
+
 ### 应用在启动时崩溃怎么办？
 
 尝试以下排障步骤：
@@ -130,3 +152,13 @@ Windows 上的某些特殊目录（如 Program Files、Windows 目录）受系�
 3. 卸载并重新安装应用程序
 4. 查看应用程序日志（通常位于用户目录下的 `.treenamer/logs`）
 5. 在项目 GitHub 上报告问题
+
+### How does TreeNamer back up my files?
+
+Yes, TreeNamer automatically creates backups before applying any changes to the actual file system. There are two types of backups:
+
+1. **Virtual Tree Backups** (default): These only store a JSON representation of the directory structure without copying actual files. This type of backup is very lightweight and can be created quickly even for large directories. They are stored in a central location (e.g., `%APPDATA%\TreeNamer\backups` on Windows).
+
+2. **Full File Backups**: If needed, complete backups including all files can also be created.
+
+You can access and manage these backups through the "Backups" tab, and easily restore to a previous state if necessary.
