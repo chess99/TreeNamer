@@ -18,7 +18,7 @@ This document provides an overview of the current implementation status of the T
 - ✅ Basic file operations (create, delete, rename)
 - ✅ Tree text parsing
 - ✅ Operation generation from tree differences
-- ⚠️ Advanced rename operation detection (needs improvement)
+- ⚠️ Rename operation handling (needs improvement)
 - ✅ Protected path detection
 
 #### Backup System (`backup.rs`)
@@ -81,10 +81,11 @@ This document provides an overview of the current implementation status of the T
 
 ### Short-term Priorities
 
-1. **Improve Rename Detection Algorithm**
-   - Enhance the algorithm to better detect renamed files and directories
-   - Handle nested directory renames correctly
-   - Resolve potential conflicts
+1. **Improve Rename Operation Handling**
+   - Implement explicit tracking of filesystem entities
+   - Maintain entity identity through unique identifiers
+   - Update data structure to track original and current paths
+   - Ensure proper propagation of renames to child entities
 
 2. **Testing and Error Handling**
    - Comprehensive testing on different platforms

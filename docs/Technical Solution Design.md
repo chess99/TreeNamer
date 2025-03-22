@@ -160,22 +160,61 @@ editableEditor.onDidChangeModelContent(() => {
 
 ### 3. 差异对比引擎
 
-#### 定制化Diff算法
+#### 明确实体跟踪方案
 
-| 变更类型      | 识别策略                              |
+| 实体类型      | 跟踪方式                               |
 |---------------|--------------------------------------|
-| 文件重命名    | 相同路径层级+不同文件名              |
-| 目录移动      | 相同文件名+父级路径变化              |
-| 结构变更      | 子树整体位移检测（LCS算法优化）       |
+| 文件实体      | 唯一ID + 原始路径与当前路径的映射关系     |
+| 目录实体      | 唯一ID + 父子关系树 + 路径映射          |
+| 操作类型      | 基于路径变化显式判定，无需推断            |
 
-#### 差异标记规则
+**数据结构:**
 
 ```typescript
-interface DiffMarker {
-  type: 'add' | 'delete' | 'modify';
-  lineNumber: number;
-  content: string;
-  className: 'diff-add' | 'diff-del' | 'diff-mod'; 
+interface FileSystemEntity {
+  id: string;               // 唯一标识符
+  originalPath: string;     // 原始完整路径
+  currentPath: string;      // 当前/修改后完整路径
+  isDirectory: boolean;     // 是否为目录
+  parentId: string | null;  // 父节点引用
+  children: string[];       // 子节点ID数组
+}
+```
+
+#### 操作生成逻辑
+
+```rust
+// 基于路径变化显式生成操作
+fn generate_operations(entities: &[FileSystemEntity]) -> Vec<FileOperation> {
+    let mut operations = Vec::new();
+    
+    // 处理重命名操作
+    for entity in entities {
+        if entity.original_path != entity.current_path {
+            operations.push(FileOperation::Rename {
+                from: entity.original_path.clone(),
+                to: entity.current_path.clone(),
+            });
+        }
+    }
+    
+    // 处理删除和创建操作
+    // 对于不在原始树中但在当前树的实体，创建操作
+    // 对于在原始树中但不在当前树的实体，删除操作
+    
+    // 按操作顺序进行排序，确保先处理父目录，再处理子文件
+    operations.sort_by(|a, b| {
+        match (a, b) {
+            (FileOperation::Rename { from: a_from, .. }, 
+             FileOperation::Rename { from: b_from, .. }) => {
+                // 短路径（树中更高层级）优先
+                a_from.len().cmp(&b_from.len())
+            }
+            _ => std::cmp::Ordering::Equal,
+        }
+    });
+    
+    operations
 }
 ```
 
@@ -186,80 +225,20 @@ interface DiffMarker {
 ```mermaid
 sequenceDiagram
   用户->>+前端: 点击"应用修改"
-  前端->>+Rust后端: 调用apply_changes API
+  前端->>+前端: 生成操作列表（基于实体路径变化）
+  前端->>+Rust后端: 调用apply_operations API
   Rust后端->>+备份管理器: 创建备份(.treenamer_backup)
   备份管理器-->>-Rust后端: 返回备份路径
-  Rust后端->>+操作队列: 生成原子操作列表
+  Rust后端->>+操作队列: 安排操作执行顺序
   loop 每个操作
-    操作队列->>文件系统: 执行原子操作(rename/mkdir/rmdir)
+    操作队列->>文件系统: 执行操作(rename/mkdir/rmdir)
     文件系统-->>操作队列: 返回结果
   end
   Rust后端-->>-前端: 返回操作结果
   前端-->>-用户: 显示成功/失败报告
 ```
 
-#### 关键API
-
-```rust
-enum FileOperation {
-    Rename { from: String, to: String },
-    CreateDir { path: String },
-    Delete { path: String },
-    SetPermissions { path: String, mode: u32 }, // 新增权限操作
-}
-
-struct RollbackStep {
-    operation: FileOperation,
-    original_state: Option<Vec<u8>>, // 可能包含原始文件内容备份
-}
-
-fn apply_operations(ops: Vec<FileOperation>) -> Result<(), Error> {
-    let mut rollback_steps = Vec::new();
-    
-    for op in ops {
-        let backup = pre_check(&op)?;
-        rollback_steps.push(backup);
-        execute_operation(op)?;
-    }
-    
-    Ok(())
-}
-
-// 回滚逻辑补充
-fn rollback(steps: Vec<RollbackStep>) -> Result<(), Error> {
-    for step in steps.iter().rev() {
-        execute_rollback(step)?;
-    }
-    Ok(())
-}
-
-fn execute_rollback(step: &RollbackStep) -> Result<(), Error> {
-    match &step.operation {
-        FileOperation::Rename { from, to } => 
-            std::fs::rename(to, from)?,  // 反向操作
-        FileOperation::CreateDir { path } => 
-            std::fs::remove_dir_all(path)?,
-        FileOperation::Delete { path } => {
-            if let Some(data) = &step.original_state {
-                std::fs::write(path, data)?;
-            }
-        },
-        FileOperation::SetPermissions { path, .. } => {
-            // 恢复原始权限
-        }
-    }
-    Ok(())
-}
-
-// 系统保护目录检测
-fn is_protected_path(path: &Path) -> bool {
-    let protected_paths = [
-        "/System", "/Library", "/usr", 
-        "C:\\Windows", "C:\\Program Files", "C:\\Program Files (x86)"
-    ];
-    protected_paths.iter().any(|p| path.starts_with(p))
-}
-```
+### 5. 其他设计决策
 
 ## 三、技术选型决策
 
