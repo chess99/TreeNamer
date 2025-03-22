@@ -1,0 +1,48 @@
+# TreeNamer - Cursor Rules
+
+## Project Structure
+
+- `src/` - Frontend React/TypeScript code
+- `src-tauri/` - Rust backend code (Tauri)
+- `docs/` - Project documentation
+
+## Key Development Patterns
+
+### Core Principles
+
+- Fully understand code logic before making changes - review all related code files first
+- Follow Test-Driven Development (TDD):
+  - Write test cases before implementation
+  - Verify tests fail initially (red)
+  - Implement the feature until tests pass (green)
+  - Run tests after implementation to confirm they pass
+- When changing designs:
+  - Update technical documentation to reflect changes
+  - Update existing tests or add new tests
+  - Update API references if public interfaces change
+- Only document meaningful solutions to difficult problems in learning sections
+  - Include problems that took significant time to solve
+  - Document issues that others are likely to encounter again
+  - Skip simple or one-time problems
+
+### Documentation References
+
+- See `docs/10-technical-solution-design.md` for detailed architecture
+- Check `docs/31-architecture-decision-records.md` for key decisions
+- Review `docs/03-implementation-status.md` for current progress
+
+## Commit Guidelines
+
+- Use conventional commit format
+- Test all UI interactions before committing
+- Update code and documentation synchronously
+
+## Learning Sections
+
+### Problem Fixes
+
+- **Tauri v2 Dialog Permission**: In Tauri v2, dialog permissions must be configured in `src-tauri/capabilities/default.json` with `"dialog:default"` instead of in `tauri.conf.json`
+
+{{ARCHITECTURE_UPDATE}}
+{{BEST_PRACTICES}}
+{{TECH_DEBT}}
