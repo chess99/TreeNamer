@@ -22,7 +22,6 @@
 +-------------------------+
 |  - 文件系统操作          |  ← std::fs模块
 |  - 目录树解析器          |  ← 自定义递归扫描器
-|  - 备份管理器            |
 +-------------------------+
 ```
 
@@ -48,8 +47,7 @@ treenamer/
 │   │   ├── commands/         # Tauri命令
 │   │   │   ├── mod.rs        # 命令模块聚合
 │   │   │   ├── fs.rs         # 文件系统操作
-│   │   │   ├── tree.rs       # 目录树解析
-│   │   │   └── backup.rs     # 备份管理
+│   │   │   └── tree.rs       # 目录树解析
 │   │   ├── error.rs          # 统一错误处理模块
 │   │   └── utils/            # 工具函数
 │   ├── Cargo.toml            # Rust依赖
@@ -224,18 +222,39 @@ fn generate_operations(entities: &[FileSystemEntity]) -> Vec<FileOperation> {
 
 ```mermaid
 sequenceDiagram
-  用户->>+前端: 点击"应用修改"
-  前端->>+前端: 生成操作列表（基于实体路径变化）
-  前端->>+Rust后端: 调用apply_operations API
-  Rust后端->>+备份管理器: 创建备份(.treenamer_backup)
-  备份管理器-->>-Rust后端: 返回备份路径
-  Rust后端->>+操作队列: 安排操作执行顺序
-  loop 每个操作
-    操作队列->>文件系统: 执行操作(rename/mkdir/rmdir)
-    文件系统-->>操作队列: 返回结果
-  end
-  Rust后端-->>-前端: 返回操作结果
-  前端-->>-用户: 显示成功/失败报告
+    participant 用户
+    participant React前端
+    participant 状态管理
+    participant Tauri IPC
+    participant Rust后端
+    
+    用户->>React前端: 编辑目录树
+    用户->>React前端: 点击"应用更改"
+    React前端->>状态管理: 获取原始树和编辑树
+    状态管理->>Tauri IPC: 请求应用更改
+    Tauri IPC->>+Rust后端: 调用apply_operations函数
+    Rust后端->>Rust后端: 分析树差异
+    Rust后端->>Rust后端: 生成操作列表
+    Rust后端->>Rust后端: 执行文件系统操作
+    Rust后端-->>-Tauri IPC: 返回操作结果
+    Tauri IPC-->>状态管理: 更新状态
+    状态管理-->>React前端: 通知状态更新
+    React前端-->>用户: 显示操作结果
+```
+
+```mermaid
+flowchart TD
+    A[开始应用更改] --> B{检查路径合法性}
+    B -->|不通过| E[显示错误信息]
+    B -->|通过| C{生成操作列表}
+    C -->|失败| E
+    C -->|通过| F[执行文件系统操作]
+    F --> G{检查操作结果}
+    G -->|失败| H[显示错误/回滚]
+    G -->|成功| I[更新UI显示成功]
+    E --> Z[结束流程]
+    H --> Z
+    I --> Z
 ```
 
 ### 5. 其他设计决策
@@ -634,4 +653,4 @@ tauri-build = { version = "1.5", features = [] }
     }
   ]
 }
-``` 
+```

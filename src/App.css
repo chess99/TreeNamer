@@ -107,173 +107,76 @@ button {
   padding: 0;
 }
 
-/* Modal Overlay Styles */
+/* Modal styling */
 .modal-overlay {
   position: fixed;
   top: 0;
   left: 0;
   right: 0;
   bottom: 0;
-  background-color: rgba(0, 0, 0, 0.5);
+  background-color: rgba(0, 0, 0, 0.7);
+  z-index: 1000;
   display: flex;
   justify-content: center;
   align-items: center;
-  z-index: 1000;
 }
 
 .modal-content {
-  background-color: #f6f6f6;
+  background-color: var(--background-color);
+  padding: 20px;
   border-radius: 8px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
-  max-width: 90%;
-  max-height: 90%;
-  overflow: auto;
-  z-index: 1001;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    color: #f6f6f6;
-    background-color: #2f2f2f;
-  }
-
-  input,
-  button {
-    color: #ffffff;
-    background-color: #0f0f0f98;
-  }
-  
-  button:active {
-    background-color: #0f0f0f69;
-  }
-  
-  .tree-container {
-    border-color: #444;
-  }
-  
-  .modal-content {
-    background-color: #2f2f2f;
-    color: #f6f6f6;
-  }
-}
-
-.backup-manager {
-  width: 100%;
-}
-
-.backup-manager h2 {
-  margin-top: 0;
-  margin-bottom: 15px;
-  font-size: 20px;
-}
-
-.backup-list {
-  list-style: none;
-  padding: 0;
-  margin: 0 0 20px 0;
-  max-height: 300px;
+  max-width: 80%;
+  width: 500px;
+  max-height: 80vh;
   overflow-y: auto;
-  border: 1px solid #ddd;
-  border-radius: 4px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
 }
 
-.backup-list li {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 10px 15px;
-  border-bottom: 1px solid #eee;
+.confirmation-dialog {
+  padding: 20px;
+  background-color: var(--background-color);
+  border-radius: 8px;
+  width: 400px;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
 }
 
-.backup-list li:last-child {
-  border-bottom: none;
+.confirmation-dialog p {
+  margin: 0 0 20px 0;
+  line-height: 1.5;
 }
 
-.backup-date {
-  font-size: 14px;
-  color: #333;
-}
-
-.backup-list li button {
-  padding: 5px 12px;
-  border-radius: 4px;
-  border: 1px solid #0078d7;
-  background-color: #fff;
-  color: #0078d7;
-  cursor: pointer;
-  font-size: 13px;
-  transition: all 0.2s;
-}
-
-.backup-list li button:hover {
-  background-color: #0078d7;
-  color: white;
-}
-
-.backup-list li button:disabled {
-  border-color: #ccc;
-  background-color: #f5f5f5;
-  color: #999;
-  cursor: not-allowed;
-}
-
-.modal-actions {
+.confirmation-dialog .buttons {
   display: flex;
   justify-content: flex-end;
-  margin-top: 20px;
+  gap: 10px;
 }
 
-.modal-actions button {
-  padding: 8px 16px;
-  border-radius: 4px;
-  border: 1px solid #ccc;
-  background-color: #f5f5f5;
-  cursor: pointer;
-  font-size: 14px;
+.confirmation-dialog button.danger {
+  background-color: #e53935;
 }
 
-.modal-actions button:hover {
-  background-color: #e0e0e0;
+.confirmation-dialog button.danger:hover {
+  background-color: #c62828;
 }
 
 /* Dark mode styles */
 @media (prefers-color-scheme: dark) {
-  .backup-list {
-    border-color: #444;
+  :root {
+    --background-color: #121212;
+    --text-color: #e0e0e0;
+    --link-color: #90caf9;
+    --border-color: #333;
+    --input-bg: #1e1e1e;
+    --button-bg: #2c2c2c;
+    --button-hover: #444;
+    --card-bg: #1e1e1e;
+    --highlight-bg: #2f2f2f;
+    --scrollbar-track: #1e1e1e;
+    --scrollbar-thumb: #555;
   }
-  
-  .backup-list li {
-    border-bottom-color: #333;
-  }
-  
-  .backup-date {
-    color: #e0e0e0;
-  }
-  
-  .backup-list li button {
-    background-color: #333;
-    color: #0078d7;
-    border-color: #0078d7;
-  }
-  
-  .backup-list li button:hover {
-    background-color: #0078d7;
-    color: #fff;
-  }
-  
-  .backup-list li button:disabled {
-    border-color: #555;
-    background-color: #444;
-    color: #777;
-  }
-  
-  .modal-actions button {
-    background-color: #333;
-    border-color: #555;
-    color: #e0e0e0;
-  }
-  
-  .modal-actions button:hover {
-    background-color: #444;
+
+  /* Dark mode overrides */
+  .confirmation-dialog {
+    background-color: var(--background-color);
   }
 }

@@ -116,64 +116,6 @@ const operations = await invoke('generate_operations', {
 });
 ```
 
-### 备份管理
-
-#### `create_backup`
-
-创建目录的虚拟备份。
-
-**参数：**
-
-- `path: String` - 要备份的目录路径
-- `tree_text: Option<String>` - 可选的目录树文本。如果提供，将用于创建虚拟备份；如果不提供，系统将尝试自动生成
-
-**返回值：**
-
-- `Result<BackupInfo, String>` - 成功时返回备份信息（包含路径、时间戳和类型），失败时返回错误信息
-
-**示例：**
-
-```javascript
-// 提供tree_text（推荐，更可靠）
-const backupInfo = await invoke('create_backup', {
-  path: '/path/to/directory',
-  tree_text: treeContent
-});
-
-// 或者让系统自动生成tree_text（可能在某些情况下失败）
-const backupInfo = await invoke('create_backup', {
-  path: '/path/to/directory'
-});
-```
-
-#### `list_backups`
-
-列出可用的备份。
-
-**参数：**
-
-- `path: String` - 目录路径
-
-**返回值：**
-
-- `Result<Vec<BackupInfo>, String>` - 成功时返回备份信息数组，失败时返回错误信息
-
-```typescript
-interface BackupInfo {
-  timestamp: string;
-  path: string;
-  size: number;
-}
-```
-
-**示例：**
-
-```javascript
-const backups = await invoke('list_backups', {
-  path: '/path/to/directory'
-});
-```
-
 ## 前端 API
 
 TreeNamer 前端提供以下主要 API：
@@ -230,45 +172,6 @@ updateModifiedTree(editedTreeText);
 
 // 应用操作
 const results = await applyOperations();
-```
-
-### 备份 API
-
-#### `useBackupStore`
-
-用于管理备份的 Zustand store。
-
-**状态：**
-
-```typescript
-interface BackupState {
-  backups: BackupInfo[];
-  isLoading: boolean;
-  error: string | null;
-  
-  // 行为
-  loadBackups: (path: string) => Promise<void>;
-  createBackup: (path: string) => Promise<string>;
-}
-```
-
-**示例：**
-
-```javascript
-import { useBackupStore } from '../store/backupStore';
-
-// 在组件中
-const { 
-  backups, 
-  loadBackups, 
-  createBackup
-} = useBackupStore();
-
-// 加载备份
-await loadBackups('/path/to/directory');
-
-// 创建备份
-const backupPath = await createBackup('/path/to/directory');
 ```
 
 ### 实用工具 API

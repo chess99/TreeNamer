@@ -21,12 +21,6 @@ This document provides an overview of the current implementation status of the T
 - ⚠️ Rename operation handling (needs improvement)
 - ✅ Protected path detection
 
-#### Backup System (`backup.rs`)
-
-- ✅ Creating virtual tree backups
-- ✅ Centralized backup storage in user app data directories
-- ✅ Automatic backup cleanup (limiting number of backups)
-
 ### Frontend Features (React)
 
 #### Directory Tree UI
@@ -64,18 +58,12 @@ This document provides an overview of the current implementation status of the T
    - Improved feedback with notifications system
    - Enhanced UI with loading indicators and disabled states
 
-2. **Simplified Backup System**
-   - Implemented lightweight JSON-based virtual backups
-   - Configured centralized backup storage in platform-specific app data directories
-
-3. **User Experience Enhancements**
+2. **User Experience Enhancements**
    - Added real-time change preview
    - Improved error handling and feedback
    - Enhanced dark mode support
 
-4. **Performance Optimizations**
-   - Reduced backup size and creation time for large directories
-   - Added entity ID tracking for improved structure restoration
+3. **Performance Optimizations**
    - Optimized change detection algorithm
 
 ## Next Steps

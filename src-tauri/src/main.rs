@@ -21,8 +21,6 @@ fn main() {
             commands::parse_directory,
             commands::apply_operations,
             commands::is_protected_path,
-            commands::create_backup,
-            commands::list_backups,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
