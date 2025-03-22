@@ -14,6 +14,10 @@ TreeNamer is a directory tree visualization and renaming tool built with Tauri, 
 
 ### Prerequisites
 
+**IMPORTANT**: This project requires specific development environment setup. For detailed prerequisites and troubleshooting, please refer to the [Prerequisites Guide](PREREQUISITES.md).
+
+Quick summary of requirements:
+
 - **Node.js**: Version 22.11.0 (configured via .nvmrc)
 
   ```bash
@@ -21,11 +25,12 @@ TreeNamer is a directory tree visualization and renaming tool built with Tauri, 
   nvm use
   ```
 
-- **Rust**: Version 1.75.0 (configured via rust-toolchain.toml)
+- **Rust**: **Nightly channel** required for Tauri 2.0 beta
 
   ```bash
-  # Rustup will automatically use the correct version
-  rustup show
+  # Install and use nightly
+  rustup toolchain install nightly
+  rustup override set nightly
   ```
 
 - **pnpm**: For package management
@@ -38,12 +43,14 @@ TreeNamer is a directory tree visualization and renaming tool built with Tauri, 
 
 #### Windows
 
-- No additional dependencies required
+- Visual Studio Build Tools with "Desktop development with C++" workload
+- See [Prerequisites Guide](PREREQUISITES.md) for detailed instructions
 
 #### macOS
 
 ```bash
 brew install webkit2gtk-4.1
+xcode-select --install
 ```
 
 #### Linux (Ubuntu/Debian)

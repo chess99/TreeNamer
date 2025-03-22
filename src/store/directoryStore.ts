@@ -77,17 +77,45 @@ export const useDirectoryStore = create<DirectoryState>((set, get) => ({
   },
 
   applyChanges: async (modifiedTree) => {
+    const { directoryPath, originalTree } = get();
+    
+    if (!directoryPath) {
+      set({ error: 'No directory path specified' });
+      return;
+    }
+    
+    if (originalTree === modifiedTree) {
+      set({ error: 'No changes to apply' });
+      return;
+    }
+    
     try {
       set({ isLoading: true, error: null });
       
-      // TODO: Implement the actual changes application
-      // This is a placeholder for now
-      console.log('Applying changes:', modifiedTree);
+      // Create a backup before applying changes
+      await invoke('create_backup', { path: directoryPath });
       
-      // We would need to parse the tree and generate file operations
-      // Then call the Rust function to apply the operations
+      // Call the Rust function to apply the changes
+      await invoke('apply_operations', { 
+        path: directoryPath,
+        originalTree,
+        modifiedTree
+      });
       
-      set({ isLoading: false });
+      // Reload the directory to reflect changes
+      const rustOptions: RustDirectoryOptions = {
+        max_depth: defaultOptions.maxDepth,
+        exclude_pattern: defaultOptions.excludePattern,
+        follow_symlinks: defaultOptions.followSymlinks,
+        show_hidden: defaultOptions.showHidden
+      };
+      
+      const result = await invoke<string>('parse_directory', { 
+        path: directoryPath,
+        options: rustOptions
+      });
+      
+      set({ originalTree: result, isLoading: false });
     } catch (e) {
       console.error('Error applying changes:', e);
       set({ error: String(e), isLoading: false });
