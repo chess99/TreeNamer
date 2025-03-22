@@ -16,15 +16,23 @@ interface RustDirectoryOptions {
   show_hidden: boolean;
 }
 
+interface BackupInfo {
+  path: string;
+  timestamp: number;
+}
+
 interface DirectoryState {
   directoryPath: string;
   originalTree: string;
   isLoading: boolean;
   error: string | null;
+  backups: BackupInfo[];
   setDirectoryPath: (path: string) => void;
   loadDirectory: (options?: Partial<DirectoryOptions>) => Promise<void>;
   applyChanges: (modifiedTree: string) => Promise<void>;
   resetError: () => void;
+  loadBackups: () => Promise<void>;
+  restoreBackup: (backupPath: string) => Promise<void>;
 }
 
 const defaultOptions: DirectoryOptions = {
@@ -39,6 +47,7 @@ export const useDirectoryStore = create<DirectoryState>((set, get) => ({
   originalTree: '',
   isLoading: false,
   error: null,
+  backups: [],
 
   setDirectoryPath: (path) => set({ directoryPath: path }),
 
@@ -115,7 +124,14 @@ export const useDirectoryStore = create<DirectoryState>((set, get) => ({
         options: rustOptions
       });
       
-      set({ originalTree: result, isLoading: false });
+      // Reload backups
+      get().loadBackups();
+      
+      set({ 
+        originalTree: result, 
+        isLoading: false,
+        error: null
+      });
     } catch (e) {
       console.error('Error applying changes:', e);
       set({ error: String(e), isLoading: false });
@@ -123,4 +139,54 @@ export const useDirectoryStore = create<DirectoryState>((set, get) => ({
   },
 
   resetError: () => set({ error: null }),
+  
+  loadBackups: async () => {
+    const { directoryPath } = get();
+    
+    if (!directoryPath) {
+      return;
+    }
+    
+    try {
+      const backups = await invoke<BackupInfo[]>('list_backups', { 
+        path: directoryPath 
+      });
+      
+      set({ backups });
+    } catch (e) {
+      console.error('Error loading backups:', e);
+      // Don't set error state as this is a secondary operation
+    }
+  },
+  
+  restoreBackup: async (backupPath) => {
+    try {
+      set({ isLoading: true, error: null });
+      
+      await invoke('restore_backup', { backupPath });
+      
+      // Reload the directory after restore
+      const { directoryPath } = get();
+      const rustOptions: RustDirectoryOptions = {
+        max_depth: defaultOptions.maxDepth,
+        exclude_pattern: defaultOptions.excludePattern,
+        follow_symlinks: defaultOptions.followSymlinks,
+        show_hidden: defaultOptions.showHidden
+      };
+      
+      const result = await invoke<string>('parse_directory', { 
+        path: directoryPath,
+        options: rustOptions
+      });
+      
+      set({ 
+        originalTree: result, 
+        isLoading: false,
+        error: null
+      });
+    } catch (e) {
+      console.error('Error restoring backup:', e);
+      set({ error: String(e), isLoading: false });
+    }
+  }
 })); 

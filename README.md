@@ -14,6 +14,7 @@ TreeNamer is a directory tree visualization and renaming tool built with Tauri, 
 
 - [Project Overview](docs/01-project-overview.md)
 - [Development Setup](docs/02-development-setup.md)
+- [Implementation Status](docs/03-implementation-status.md)
 - [Product Design Document](docs/Product%20Design%20Document.md)
 - [Technical Solution Design](docs/Technical%20Solution%20Design.md)
 - [Implementation Action Plan](docs/Implementation%20Action%20Plan.md)

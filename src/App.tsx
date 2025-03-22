@@ -5,8 +5,15 @@ import DirectoryTree from "./components/FileTree/DirectoryTree";
 import DirectorySettings from "./components/Settings/DirectorySettings";
 import { useDirectoryStore } from "./store/directoryStore";
 
+// Define the BackupInfo interface
+interface BackupInfo {
+  path: string;
+  timestamp: number;
+}
+
 function App() {
   const [showSettings, setShowSettings] = useState(false);
+  const [showBackups, setShowBackups] = useState(false);
   
   const { 
     directoryPath, 
@@ -16,13 +23,23 @@ function App() {
     setDirectoryPath, 
     loadDirectory, 
     applyChanges,
-    resetError
+    resetError,
+    backups,
+    loadBackups,
+    restoreBackup
   } = useDirectoryStore();
 
   // Reset error when directoryPath changes
   useEffect(() => {
     resetError();
   }, [directoryPath, resetError]);
+
+  // Load backups when directory path changes
+  useEffect(() => {
+    if (directoryPath) {
+      loadBackups();
+    }
+  }, [directoryPath, loadBackups]);
 
   const handleOpenDirectory = async () => {
     try {
@@ -45,7 +62,7 @@ function App() {
   return (
     <div className="container">
       <h1>TreeNamer</h1>
-      <p>目录树重命名工具</p>
+      <p>Directory Tree Rename Tool</p>
 
       <div className="row">
         <input
@@ -63,9 +80,12 @@ function App() {
         <button type="button" onClick={() => setShowSettings(true)} disabled={isLoading || !directoryPath}>
           Settings
         </button>
+        {backups.length > 0 && (
+          <button type="button" onClick={() => setShowBackups(true)} disabled={isLoading}>
+            Backups ({backups.length})
+          </button>
+        )}
       </div>
-
-      {error && <div className="error">{error}</div>}
 
       {showSettings && (
         <div className="modal-overlay">
@@ -75,11 +95,46 @@ function App() {
         </div>
       )}
 
+      {showBackups && (
+        <div className="modal-overlay">
+          <div className="modal-content">
+            <div className="backup-manager">
+              <h2>Backup Manager</h2>
+              <p>Select a backup to restore:</p>
+              <ul className="backup-list">
+                {backups.map((backup: BackupInfo, index: number) => {
+                  const date = new Date(backup.timestamp * 1000).toLocaleString();
+                  return (
+                    <li key={index}>
+                      <span className="backup-date">{date}</span>
+                      <button 
+                        onClick={() => {
+                          restoreBackup(backup.path);
+                          setShowBackups(false);
+                        }}
+                        disabled={isLoading}
+                      >
+                        Restore
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+              <div className="modal-actions">
+                <button onClick={() => setShowBackups(false)}>Close</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {originalTree && (
         <div className="tree-container">
           <DirectoryTree 
             originalTree={originalTree} 
-            onApplyChanges={applyChanges} 
+            onApplyChanges={applyChanges}
+            isLoading={isLoading}
+            error={error}
           />
         </div>
       )}
