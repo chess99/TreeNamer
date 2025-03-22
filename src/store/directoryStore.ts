@@ -54,6 +54,7 @@ export const useDirectoryStore = create<DirectoryState>((set, get) => ({
       set({ isLoading: true, error: null });
       
       const mergedOptions = { ...defaultOptions, ...options };
+      console.log('Merged frontend options:', mergedOptions);
       
       // Convert to the format expected by Rust
       const rustOptions: RustDirectoryOptions = {
@@ -62,17 +63,33 @@ export const useDirectoryStore = create<DirectoryState>((set, get) => ({
         follow_symlinks: mergedOptions.followSymlinks,
         show_hidden: mergedOptions.showHidden
       };
+      console.log('Converted Rust options:', rustOptions);
       
       // Call the Rust function to parse the directory
-      const result = await invoke<string>('parse_directory', { 
-        path: directoryPath,
+      const invokeParams = { 
+        dirPath: directoryPath,
         options: rustOptions
-      });
+      };
+      console.log('Calling parse_directory with params:', JSON.stringify(invokeParams));
       
-      set({ 
-        originalTree: result, 
-        isLoading: false
-      });
+      try {
+        const result = await invoke<string>('parse_directory', invokeParams);
+        console.log('Invoke successful, received data length:', result?.length || 0);
+        
+        set({ 
+          originalTree: result, 
+          isLoading: false
+        });
+      } catch (invokeErr) {
+        console.error('Invoke error details:', {
+          error: invokeErr,
+          errorType: typeof invokeErr,
+          errorMessage: invokeErr instanceof Error ? invokeErr.message : String(invokeErr),
+          errorStack: invokeErr instanceof Error ? invokeErr.stack : undefined,
+          params: invokeParams
+        });
+        throw invokeErr;
+      }
     } catch (e) {
       console.error('Error loading directory:', e);
       set({ error: String(e), isLoading: false });
@@ -101,9 +118,9 @@ export const useDirectoryStore = create<DirectoryState>((set, get) => ({
       console.log('Applying operations...');
       // Call the Rust function to apply the changes
       await invoke('apply_operations', { 
-        path: directoryPath,
-        originalTree,
-        modifiedTree
+        dirPath: directoryPath,
+        originalTree: originalTree,
+        modifiedTree: modifiedTree
       });
       
       console.log('Operations applied successfully, reloading directory...');
@@ -116,7 +133,7 @@ export const useDirectoryStore = create<DirectoryState>((set, get) => ({
       };
       
       const result = await invoke<string>('parse_directory', { 
-        path: directoryPath,
+        dirPath: directoryPath,
         options: rustOptions
       });
       

@@ -218,3 +218,99 @@ TreeNamer 的核心功能是跟踪和应用文件系统变更，尤其是重命�
 - 增加设计和开发复杂性
 - 需要测试两种主题下的所有 UI 元素
 - 需要实现主题偏好存储
+
+## ADR-008: Use Tauri for Cross-Platform Support
+
+**Date**: 2024-03-15
+
+**Status**: Accepted
+
+**Context**:
+We need to build a cross-platform desktop application that can access the file system to rename files and directories. Performance and binary size are important considerations.
+
+**Decision**:
+Use Tauri framework combining Rust for the backend and React/TypeScript for the frontend.
+
+**Consequences**:
+- Reduced application bundle size compared to Electron
+- Better performance due to Rust backend
+- Secure access to system resources through Rust's permission system
+- Some increased complexity due to language boundary crossing
+- Potential learning curve for developers unfamiliar with Rust
+
+## ADR-009: Text-Based Tree Representation for UI
+
+**Date**: 2024-03-17
+
+**Status**: Superseded by ADR-005
+
+**Context**:
+We need a straightforward, human-editable way to represent directory trees for renaming operations.
+
+**Decision**:
+Represent directory trees as text with visual indentation, similar to the output of the `tree` command in Unix systems.
+
+**Consequences**:
+- Intuitive for users familiar with command-line tools
+- Easy to edit without requiring complex UI components
+- Requires parsing logic to convert between text and actual file system operations
+- May have limitations in representing special characters in filenames
+- Need careful error handling for invalid modifications to the text format
+
+## ADR-010: Event-Based State Management
+
+**Date**: 2024-03-18
+
+**Status**: Accepted
+
+**Context**:
+We need a state management approach for the React frontend that allows multiple components to react to changes.
+
+**Decision**:
+Use an event-based state management pattern with the useContext and useReducer hooks.
+
+**Consequences**:
+- Simplified component communication
+- Better separation of concerns between UI and logic
+- Predictable state updates
+- Reduced prop drilling
+- Slightly increased complexity for simple operations
+
+## ADR-011: Unicode-Aware Parsing
+
+**Date**: 2024-03-20
+
+**Status**: Accepted
+
+**Context**:
+Tree text representation includes unicode characters (like ├, └, │) and filenames may contain unicode characters.
+
+**Decision**:
+Use explicit unicode-aware string handling in Rust for parsing and manipulating tree text.
+
+**Consequences**:
+- Better support for international characters in filenames
+- More robust handling of the tree display characters
+- Avoids byte-offset bugs when slicing strings
+- Slight performance overhead compared to byte-based operations
+
+## ADR-012: JSON-Based Data Structure for Frontend-Backend Communication
+
+**Date**: 2024-04-04
+
+**Status**: Accepted
+
+**Context**:
+The text-based tree representation has been challenging to parse reliably, particularly with complex directory structures. Maintaining character-precise formatting while ensuring accurate parsing between frontend and backend is error-prone.
+
+**Decision**:
+Replace text-based tree representation with JSON data structures for communication between frontend and backend. The backend will serialize directory trees as JSON, and the frontend will deserialize, display, and re-serialize modified trees back to JSON for the backend to process.
+
+**Consequences**:
+- More robust data passing between frontend and backend
+- Elimination of complex text parsing logic and associated bugs
+- Clear separation between data model and visual representation
+- Frontend can focus on visualization while backend handles data structure
+- Ability to add metadata to tree nodes in the future
+- Maintains the text-based UI for user editing but with more reliable underlying data structure
+- Slightly increased payload size compared to plain text

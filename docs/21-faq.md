@@ -92,6 +92,36 @@ TreeNamer 目前不直接支持正则表达式批量重命名。但您可以：
 1. 在文本编辑模式中使用编辑器的查找替换功能
 2. 应用这些更改作为重命名计划
 
+## 技术问题
+
+### 为什么我的目录树不能正确应用到文件系统？
+
+最常见的原因是目录树文本格式不正确。请确保：
+
+1. 每个目录和文件前都有正确的缩进和分支符号（`├──` 或 `└──`）
+2. 目录名称后有斜杠（`/`）
+3. 不要包含系统不允许的字符（如：`? * : " < > |`）
+
+### 如何处理大型目录结构？
+
+TreeNamer 设计用于处理中小型目录结构（约 500-1000 个节点）。对于较大的目录结构，我们建议：
+
+1. 分批处理，每次选择较小的子目录
+2. 使用过滤功能减少显示的文件数量
+3. 对大型结构的操作可能需要更长的处理时间
+
+### 系统如何跟踪文件和目录的变化？
+
+TreeNamer 使用唯一标识符（UUID）跟踪每个文件和目录实体。这使系统能够精确识别哪些实体被重命名、移动或删除，即使它们的路径或名称发生变化。这种设计确保即使在复杂的操作序列中（如多层次的重命名和移动），系统也能正确地应用所有操作。
+
+### 如果我重命名多个文件，系统如何确保正确执行？
+
+系统使用唯一标识符跟踪每个实体，并根据操作类型和路径深度对操作进行排序。这确保了即使在复杂的重命名链中（A→B→C，其中B已存在），操作也能以正确的顺序执行。目录创建会先执行，然后是重命名操作（从深到浅），最后是删除操作（从浅到深）。
+
+### 编辑器中的文本格式与实际的文件系统操作有什么关系？
+
+文本格式仅是用户界面的展示形式。在内部，系统使用JSON数据结构存储目录树信息，包括每个节点的唯一标识符。编辑文本时，系统会解析更改并更新内部JSON结构，然后生成必要的文件系统操作。这种设计将用户界面与底层逻辑分离，提高了系统稳定性。
+
 # Frequently Asked Questions (FAQ)
 
 ## Basic Usage
@@ -185,3 +215,25 @@ TreeNamer currently doesn't directly support regex batch renaming. However, you 
 
 1. Use your editor's find-and-replace functionality in text edit mode
 2. Apply these changes as your rename plan
+
+## Technical Questions
+
+### Why is JSON data structure combined with text representation?
+
+The application uses JSON data structure to represent directory tree, but displays it as text format in the user interface. This design has several benefits:
+
+1. **Reliability**: JSON provides a structured data format, making communication between front-end and back-end more reliable and avoiding text parsing errors.
+2. **User-friendliness**: Text representation (similar to the output of `tree` command) is intuitive and easy to edit for users.
+3. **Separation of concerns**: Separating data structure (JSON) from representation layer (text) makes the code easier to maintain.
+4. **Extensibility**: JSON format is easier to add new node attributes or metadata without breaking existing functionality.
+
+### What happens if there's a parsing error when editing the tree?
+
+If there's a parsing error when editing the directory tree text, it might be because the format is incorrect. Please ensure:
+
+1. Each line's indentation is correct (using spaces, each level indented 4 spaces)
+2. Directory name ends with a slash (/)
+3. Connection symbols (like `├──`, `└──`) are formatted correctly
+4. Do not delete or modify the connection lines (│) in indentation
+
+If the problem persists, try abandoning the modification and reloading the directory, or checking if any illegal characters are inserted into the editor.

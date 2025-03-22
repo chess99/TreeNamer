@@ -1,9 +1,8 @@
 .monaco-editor-container {
   width: 100%;
-  height: 100%;
-  border: 1px solid #ccc;
   border-radius: 4px;
   overflow: hidden;
+  border: 1px solid #ccc;
 }
 
 .monaco-editor .monaco-editor-background,
@@ -11,11 +10,18 @@
   background-color: #fcfcfc;
 }
 
-/* 确保文本可选择 */
-.monaco-editor .view-lines {
+/* Make sure text selection works properly */
+.monaco-editor .view-line span {
   user-select: text !important;
   -webkit-user-select: text !important;
   cursor: text !important;
+}
+
+/* Reset any custom styling that might interfere with selection */
+.monaco-editor .view-lines {
+  cursor: text !important;
+  user-select: text !important;
+  -webkit-user-select: text !important;
 }
 
 /* 高亮创建、修改和删除的节点 */

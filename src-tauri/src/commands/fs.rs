@@ -1,15 +1,12 @@
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::fs;
 use tauri::command;
 use serde::{Serialize, Deserialize};
 use std::collections::HashMap;
-use std::collections::HashSet;
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub enum FileOperation {
     Rename { from: String, to: String },
-    CreateDir { path: String },
-    Delete { path: String },
 }
 
 #[derive(Debug, Serialize)]
@@ -18,136 +15,404 @@ pub struct OperationResult {
     pub message: String,
 }
 
-#[command]
-pub fn apply_operations(path: &str, original_tree: &str, modified_tree: &str) -> Result<Vec<OperationResult>, String> {
-    println!("apply_operations called with path: {}", path);
+#[derive(Debug, Deserialize, Clone)]
+pub struct TreeNode {
+    id: String,
+    name: String,
+    is_dir: bool,
+    children: Vec<TreeNode>,
+}
+
+// 将TreeNode转换为HashMap<id -> (path, is_dir)>
+fn tree_node_to_id_paths(node: &TreeNode, parent_path: &str) -> HashMap<String, (String, bool)> {
+    let mut id_paths = HashMap::new();
     
-    let base_path = Path::new(path);
+    let current_path = if parent_path.is_empty() {
+        node.name.clone()
+    } else {
+        format!("{}/{}", parent_path, node.name)
+    };
+    
+    // 存储节点ID -> (路径, 是否是目录)
+    id_paths.insert(node.id.clone(), (current_path.clone(), node.is_dir));
+    
+    for child in &node.children {
+        let child_id_paths = tree_node_to_id_paths(child, &current_path);
+        id_paths.extend(child_id_paths);
+    }
+    
+    id_paths
+}
+
+// 将TreeNode转换为HashMap<path -> id>
+pub fn tree_node_to_path_ids(node: &TreeNode, parent_path: &str) -> HashMap<String, String> {
+    let mut path_ids = HashMap::new();
+    
+    let current_path = if parent_path.is_empty() {
+        node.name.clone()
+    } else {
+        format!("{}/{}", parent_path, node.name)
+    };
+    
+    // 存储路径 -> 节点ID
+    path_ids.insert(current_path.clone(), node.id.clone());
+    
+    for child in &node.children {
+        let child_path_ids = tree_node_to_path_ids(child, &current_path);
+        path_ids.extend(child_path_ids);
+    }
+    
+    path_ids
+}
+
+// 用于调试的转换函数，生成与以前相同的路径->is_dir映射
+fn tree_node_to_paths(node: &TreeNode, parent_path: &str) -> HashMap<String, bool> {
+    let mut paths = HashMap::new();
+    
+    let current_path = if parent_path.is_empty() {
+        node.name.clone()
+    } else {
+        format!("{}/{}", parent_path, node.name)
+    };
+    
+    paths.insert(current_path.clone(), node.is_dir);
+    
+    for child in &node.children {
+        let child_paths = tree_node_to_paths(child, &current_path);
+        paths.extend(child_paths);
+    }
+    
+    paths
+}
+
+// 新函数：仅生成操作但不执行，用于测试
+pub fn generate_operations_from_json(
+    base_path: &str, 
+    original_tree: &str, 
+    modified_tree: &str
+) -> Result<Vec<FileOperation>, String> {
+    println!("generate_operations_from_json called with path: {}", base_path);
+    
+    let base_path = Path::new(base_path);
     if !base_path.exists() {
         println!("Error: Path does not exist: {}", base_path.display());
         return Err(format!("Path does not exist: {}", base_path.display()));
     }
     
-    println!("Extracting paths from tree strings...");
-    // Parse the original and modified trees
-    let original_paths = parse_tree_text(original_tree)?;
-    let modified_paths = parse_tree_text(modified_tree)?;
+    println!("Parsing tree JSON...");
+    // Parse the original and modified trees from JSON
+    let original_node: TreeNode = match serde_json::from_str(original_tree) {
+        Ok(tree) => tree,
+        Err(e) => {
+            println!("Error parsing original tree JSON: {}", e);
+            return Err(format!("Invalid original tree JSON: {}", e));
+        }
+    };
     
-    println!("Original paths: {}, Modified paths: {}", original_paths.len(), modified_paths.len());
+    let modified_node: TreeNode = match serde_json::from_str(modified_tree) {
+        Ok(tree) => tree,
+        Err(e) => {
+            println!("Error parsing modified tree JSON: {}", e);
+            return Err(format!("Invalid modified tree JSON: {}", e));
+        }
+    };
     
-    println!("Generating operations...");
-    // Generate operations
-    let operations = generate_operations(path, &original_paths, &modified_paths)?;
+    // 构建每个ID对应的路径映射
+    let original_id_paths = tree_node_to_id_paths(&original_node, "");
+    let modified_id_paths = tree_node_to_id_paths(&modified_node, "");
+    
+    println!("Original IDs: {}, Modified IDs: {}", 
+             original_id_paths.len(), modified_id_paths.len());
+    
+    // 输出所有ID信息进行调试
+    println!("Original ID paths:");
+    for (id, (path, is_dir)) in &original_id_paths {
+        println!("  ID: {}, Path: {}, IsDir: {}", id, path, is_dir);
+    }
+    
+    println!("Modified ID paths:");
+    for (id, (path, is_dir)) in &modified_id_paths {
+        println!("  ID: {}, Path: {}, IsDir: {}", id, path, is_dir);
+    }
+    
+    // 只生成需要重命名的操作
+    let mut operations = Vec::new();
+    
+    // Check for renamed files by comparing paths between trees with matching IDs
+    println!("Checking for renamed files where IDs match...");
+    for (id, (mod_path, _)) in &modified_id_paths {
+        // 如果原始树中存在相同的ID
+        if let Some((orig_path, _)) = original_id_paths.get(id) {
+            // 检查路径是否发生变化
+            if orig_path != mod_path {
+                println!("Found rename for ID {}: {} -> {}", id, orig_path, mod_path);
+                
+                // 创建重命名操作
+                operations.push(FileOperation::Rename {
+                    from: base_path.join(orig_path).to_string_lossy().to_string(),
+                    to: base_path.join(mod_path).to_string_lossy().to_string(),
+                });
+            }
+        } else {
+            // ID不匹配，尝试通过位置/名称推断
+            println!("Warning: ID {} in modified tree not found in original tree.", id);
+        }
+    }
+    
+    // 如果没有找到任何操作，尝试按树结构位置推断重命名
+    if operations.is_empty() {
+        println!("No operations found with ID matching. Using position-based matching strategy...");
+        
+        // 解析为树结构以进行位置比较
+        let original_tree: TreeNode = serde_json::from_str(original_tree).unwrap();
+        let modified_tree: TreeNode = serde_json::from_str(modified_tree).unwrap();
+        
+        // 逐一遍历所有节点，假设树结构不变，只有节点名称可能改变
+        let mut original_paths = Vec::new();
+        let mut modified_paths = Vec::new();
+        
+        // 递归收集树中的所有路径
+        fn collect_paths(node: &TreeNode, parent_path: &str, paths: &mut Vec<(String, String)>) {
+            let current_path = if parent_path.is_empty() {
+                node.name.clone()
+            } else {
+                format!("{}/{}", parent_path, node.name)
+            };
+            
+            paths.push((node.id.clone(), current_path.clone()));
+            
+            for child in &node.children {
+                collect_paths(child, &current_path, paths);
+            }
+        }
+        
+        collect_paths(&original_tree, "", &mut original_paths);
+        collect_paths(&modified_tree, "", &mut modified_paths);
+        
+        println!("Original paths count: {}", original_paths.len());
+        println!("Modified paths count: {}", modified_paths.len());
+        
+        // 只在调试模式打印详细路径
+        #[cfg(debug_assertions)]
+        {
+            println!("Original paths: {:?}", original_paths);
+            println!("Modified paths: {:?}", modified_paths);
+        }
+        
+        // 假设节点顺序不变，对应位置上的节点可能只改了名称
+        if original_paths.len() == modified_paths.len() {
+            for i in 0..original_paths.len() {
+                let (_, orig_path) = &original_paths[i];
+                let (_, mod_path) = &modified_paths[i];
+                
+                // 如果路径不同但位置相同，认为是重命名
+                if orig_path != mod_path {
+                    println!("Found potential rename at position {}: {} -> {}", i, orig_path, mod_path);
+                    
+                    operations.push(FileOperation::Rename {
+                        from: base_path.join(orig_path).to_string_lossy().to_string(),
+                        to: base_path.join(mod_path).to_string_lossy().to_string(),
+                    });
+                }
+            }
+        } else {
+            println!("Tree structure changed. Cannot safely determine renames. Original length: {}, Modified length: {}", 
+                    original_paths.len(), modified_paths.len());
+        }
+    }
+    
+    // 对重命名操作按照路径深度排序，深度更大的路径（文件）先处理
+    operations.sort_by(|a, b| {
+        let (FileOperation::Rename { from: from_a, .. }, FileOperation::Rename { from: from_b, .. }) = (a, b);
+        // 先按照是否为目录排序（文件优先）
+        let a_is_dir = Path::new(from_a).is_dir();
+        let b_is_dir = Path::new(from_b).is_dir();
+        
+        if a_is_dir != b_is_dir {
+            return if a_is_dir { std::cmp::Ordering::Greater } else { std::cmp::Ordering::Less };
+        }
+        
+        // 然后按照路径深度排序（深度大的优先）
+        let a_components = Path::new(from_a).components().count();
+        let b_components = Path::new(from_b).components().count();
+        return b_components.cmp(&a_components);
+    });
     
     println!("Generated {} operations", operations.len());
     
-    // Apply operations
+    // 显示所有生成的操作
+    for (i, op) in operations.iter().enumerate() {
+        let FileOperation::Rename { from, to } = op;
+        println!("Operation {}: {} -> {}", i+1, from, to);
+    }
+    
+    Ok(operations)
+}
+
+#[command]
+pub fn apply_operations(
+    #[allow(non_snake_case)] dirPath: String, 
+    #[allow(non_snake_case)] originalTree: String, 
+    #[allow(non_snake_case)] modifiedTree: String
+) -> Result<Vec<OperationResult>, String> {
+    println!("apply_operations called with path: {}", dirPath);
+    
+    // 首先生成操作 - 现在只会生成重命名操作
+    let operations = generate_operations_from_json(&dirPath, &originalTree, &modifiedTree)?;
+    
+    // 应用操作
     let mut results = Vec::new();
     
-    // First create new directories
-    let create_ops: Vec<_> = operations.iter()
-        .filter(|op| matches!(op, FileOperation::CreateDir { .. }))
+    // 删除操作中可能包含的重复目录路径
+    let base_path = Path::new(&dirPath);
+    let base_name = base_path.file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_default();
+    
+    // 修复路径中可能包含的重复目录名
+    let fixed_operations: Vec<FileOperation> = operations.into_iter()
+        .map(|op| match op {
+            FileOperation::Rename { from, to } => {
+                // 检查路径是否包含重复目录，如 D:\__temp\__temp\file.txt
+                let from_fixed = fix_duplicate_path(&from, &base_name);
+                let to_fixed = fix_duplicate_path(&to, &base_name);
+                
+                if from != from_fixed || to != to_fixed {
+                    println!("Fixed path:\n  From: {} -> {}\n  To: {} -> {}", 
+                        from, from_fixed, to, to_fixed);
+                }
+                
+                FileOperation::Rename { 
+                    from: from_fixed,
+                    to: to_fixed
+                }
+            }
+        })
         .collect();
     
-    for op in create_ops {
-        if let FileOperation::CreateDir { path } = op {
-            let result = apply_operation(op);
-            results.push(result);
-        }
-    }
-    
-    // Then rename files and directories
-    let rename_ops: Vec<_> = operations.iter()
-        .filter(|op| matches!(op, FileOperation::Rename { .. }))
-        .collect();
-    
-    for op in rename_ops {
-        if let FileOperation::Rename { from, to } = op {
-            let result = apply_operation(op);
-            results.push(result);
-        }
-    }
-    
-    // Finally delete files and directories
-    let delete_ops: Vec<_> = operations.iter()
-        .filter(|op| matches!(op, FileOperation::Delete { .. }))
-        .collect();
-    
-    for op in delete_ops {
-        if let FileOperation::Delete { path } = op {
-            let result = apply_operation(op);
-            results.push(result);
-        }
+    // 重命名操作已经按照从文件到目录、从深到浅的顺序排序
+    println!("Applying rename operations:");
+    for (i, op) in fixed_operations.iter().enumerate() {
+        let FileOperation::Rename { from, to } = op;
+        println!("  {}. {} -> {}", i+1, from, to);
+        
+        let result = apply_operation(op);
+        results.push(result);
     }
     
     println!("All operations applied successfully");
     Ok(results)
 }
 
+// 修复可能包含重复目录的路径
+fn fix_duplicate_path(path: &str, base_name: &str) -> String {
+    println!("Fixing path: {}", path);
+    
+    // Windows路径处理: 转换可能的 \ 为 /
+    let normalized_path = path.replace('\\', "/");
+    
+    // 检查路径是否包含重复的基目录名称
+    let base_path_pattern = format!("/{}/{}/", base_name, base_name);
+    let base_start_pattern = format!("{}/{}/", base_name, base_name);
+    
+    let fixed_path = if normalized_path.contains(&base_path_pattern) {
+        // 修复中间的重复目录名称
+        normalized_path.replace(&base_path_pattern, format!("/{}/", base_name).as_str())
+    } else if normalized_path.starts_with(&base_start_pattern) {
+        // 修复开头的重复目录名称
+        normalized_path.replacen(&base_start_pattern, format!("{}/", base_name).as_str(), 1)
+    } else {
+        normalized_path.clone()
+    };
+    
+    // 如果有修复，记录日志
+    if fixed_path != normalized_path {
+        println!("  Fixed duplicate directory: {} -> {}", path, fixed_path);
+    }
+    
+    // 转换回适合当前操作系统的路径分隔符
+    if cfg!(windows) {
+        fixed_path.replace('/', "\\")
+    } else {
+        fixed_path
+    }
+}
+
+// 简化测试函数，测试确定目录重复情况
+fn test_fix_duplicate_path() {
+    println!("Running path fixing tests:");
+    
+    let test1 = fix_duplicate_path("D:\\__temp\\__temp\\file.txt", "__temp");
+    println!("Test 1: D:\\__temp\\__temp\\file.txt -> {}", test1);
+    assert_eq!(test1, "D:\\__temp\\file.txt".to_string());
+    
+    let test2 = fix_duplicate_path("D:\\dir\\dir\\subdir\\file.txt", "dir");
+    println!("Test 2: D:\\dir\\dir\\subdir\\file.txt -> {}", test2);
+    assert_eq!(test2, "D:\\dir\\subdir\\file.txt".to_string());
+    
+    let test3 = fix_duplicate_path("D:\\normal\\path\\file.txt", "normal");
+    println!("Test 3: D:\\normal\\path\\file.txt -> {}", test3);
+    assert_eq!(test3, "D:\\normal\\path\\file.txt".to_string());
+    
+    println!("Path fixing tests completed!");
+}
+
+// 应用操作的函数
 fn apply_operation(operation: &FileOperation) -> OperationResult {
+    // 运行简单测试
+    #[cfg(debug_assertions)]
+    test_fix_duplicate_path();
+    
     match operation {
         FileOperation::Rename { from, to } => {
             let from_path = Path::new(from);
             let to_path = Path::new(to);
             
+            println!("Applying rename operation: from '{}' to '{}'", from, to);
+            
+            // Check if paths exist
+            println!("From path exists: {}", from_path.exists());
+            if let Some(parent) = to_path.parent() {
+                println!("To parent exists: {}", parent.exists());
+            }
+            
             // Create parent directories if they don't exist
             if let Some(parent) = to_path.parent() {
                 if !parent.exists() {
+                    println!("Creating parent directory: {}", parent.display());
                     if let Err(e) = fs::create_dir_all(parent) {
+                        println!("Failed to create parent directory: {}", e);
                         return OperationResult {
                             success: false,
                             message: format!("Failed to create parent directory: {}", e),
                         };
                     }
+                    println!("Parent directory created successfully");
                 }
             }
             
+            println!("Attempting to rename file");
             match fs::rename(from_path, to_path) {
-                Ok(_) => OperationResult {
-                    success: true,
-                    message: format!("Renamed {} to {}", from, to),
+                Ok(_) => {
+                    println!("Rename successful: {} to {}", from, to);
+                    OperationResult {
+                        success: true,
+                        message: format!("Renamed {} to {}", from, to),
+                    }
                 },
-                Err(e) => OperationResult {
-                    success: false,
-                    message: format!("Failed to rename {} to {}: {}", from, to, e),
-                },
-            }
-        },
-        FileOperation::CreateDir { path } => {
-            let dir_path = Path::new(path);
-            match fs::create_dir_all(dir_path) {
-                Ok(_) => OperationResult {
-                    success: true,
-                    message: format!("Created directory {}", path),
-                },
-                Err(e) => OperationResult {
-                    success: false,
-                    message: format!("Failed to create directory {}: {}", path, e),
-                },
-            }
-        },
-        FileOperation::Delete { path } => {
-            let delete_path = Path::new(path);
-            let result = if delete_path.is_dir() {
-                fs::remove_dir_all(delete_path)
-            } else {
-                fs::remove_file(delete_path)
-            };
-            
-            match result {
-                Ok(_) => OperationResult {
-        success: true,
-                    message: format!("Deleted {}", path),
-                },
-                Err(e) => OperationResult {
-                    success: false,
-                    message: format!("Failed to delete {}: {}", path, e),
+                Err(e) => {
+                    println!("Rename failed: {} to {}: {}", from, to, e);
+                    OperationResult {
+                        success: false,
+                        message: format!("Failed to rename {} to {}: {}", from, to, e),
+                    }
                 },
             }
         },
     }
 }
 
+// 以下函数保持不变，但在新算法中可能不再需要
 pub fn parse_tree_text(tree_text: &str) -> Result<HashMap<String, bool>, String> {
     let mut paths = HashMap::new();
     let lines: Vec<&str> = tree_text.split('\n').collect();
@@ -211,328 +476,7 @@ pub fn parse_tree_text(tree_text: &str) -> Result<HashMap<String, bool>, String>
     Ok(paths)
 }
 
-pub fn generate_operations(
-    base_path: &str, 
-    original_paths: &HashMap<String, bool>, 
-    modified_paths: &HashMap<String, bool>
-) -> Result<Vec<FileOperation>, String> {
-    let mut operations = Vec::new();
-    let base = Path::new(base_path);
-    
-    // Track paths that have been processed
-    let mut processed_original = HashSet::new();
-    let mut processed_modified = HashSet::new();
-    
-    // Find common parent directories for potential renames
-    let mut original_dirs: Vec<_> = original_paths.iter()
-        .filter(|(_, &is_dir)| is_dir)
-        .map(|(path, _)| path)
-        .collect();
-    
-    let mut modified_dirs: Vec<_> = modified_paths.iter()
-        .filter(|(_, &is_dir)| is_dir)
-        .map(|(path, _)| path)
-        .collect();
-    
-    // Sort by path length (descending) to process deepest paths first
-    original_dirs.sort_by(|a, b| b.len().cmp(&a.len()));
-    modified_dirs.sort_by(|a, b| b.len().cmp(&a.len()));
-    
-    // Step 1: Detect root directory renames first (special case)
-    // Find original directories without parents (root level)
-    let root_original_dirs: Vec<_> = original_dirs.iter()
-        .filter(|path| !path.contains('/') && !processed_original.contains(**path))
-        .collect();
-    
-    // Find modified directories without parents (root level)
-    let root_modified_dirs: Vec<_> = modified_dirs.iter()
-        .filter(|path| !path.contains('/') && !processed_modified.contains(**path))
-        .collect();
-    
-    // Try to match root directories by content similarity
-    for &original_dir in &root_original_dirs {
-        let original_children = get_children(original_paths, original_dir);
-        
-        // If no children, use a name similarity approach
-        if original_children.is_empty() {
-            continue;
-        }
-        
-        for &modified_dir in &root_modified_dirs {
-            if processed_modified.contains(*modified_dir) || original_dir == modified_dir {
-                continue;
-            }
-            
-            let modified_children = get_children(modified_paths, modified_dir);
-            
-            // Try a more lenient threshold for root directories
-            if is_similar_directory(&original_children, &modified_children, 0.3) {
-                // We found a probable directory rename
-                processed_original.insert((*original_dir).clone());
-                processed_modified.insert((*modified_dir).clone());
-                
-                // Add the rename operation
-                operations.push(FileOperation::Rename { 
-                    from: base.join(original_dir).to_string_lossy().to_string(),
-                    to: base.join(modified_dir).to_string_lossy().to_string()
-                });
-                
-                // Mark all children as processed so we don't process them again
-                for child in original_children.keys() {
-                    processed_original.insert(child.clone());
-                }
-                
-                for child in modified_children.keys() {
-                    processed_modified.insert(child.clone());
-                }
-                
-                break;
-            }
-        }
-    }
-    
-    // Step 2: Detect other directory renames by comparing contents
-    for original_dir in &original_dirs {
-        if processed_original.contains(*original_dir) {
-            continue;
-        }
-        
-        let original_children = get_children(original_paths, original_dir);
-        
-        for modified_dir in &modified_dirs {
-            if processed_modified.contains(*modified_dir) || original_dir == modified_dir {
-                continue;
-            }
-            
-            let modified_children = get_children(modified_paths, modified_dir);
-            
-            // Calculate similarity between directories
-            // Use a lower threshold for root level directories
-            let threshold = if original_dir.contains('/') { 0.7 } else { 0.5 };
-            if is_similar_directory(&original_children, &modified_children, threshold) {
-                // We found a probable directory rename
-                processed_original.insert((*original_dir).clone());
-                processed_modified.insert((*modified_dir).clone());
-                
-                // Add the rename operation
-                operations.push(FileOperation::Rename { 
-                    from: base.join(original_dir).to_string_lossy().to_string(),
-                    to: base.join(modified_dir).to_string_lossy().to_string()
-                });
-                
-                // Mark all children as processed so we don't process them again
-                for child in original_children.keys() {
-                    processed_original.insert(child.clone());
-                }
-                
-                for child in modified_children.keys() {
-                    processed_modified.insert(child.clone());
-                }
-                
-                break;
-            }
-        }
-    }
-    
-    // Step 3: Look for file renames by comparing name similarity
-    let original_files: Vec<_> = original_paths.iter()
-        .filter(|(path, &is_dir)| !is_dir && !processed_original.contains(*path))
-        .collect();
-    
-    let modified_files: Vec<_> = modified_paths.iter()
-        .filter(|(path, &is_dir)| !is_dir && !processed_modified.contains(*path))
-        .collect();
-    
-    // For each original file that wasn't processed yet
-    for (original_path, _) in &original_files {
-        if processed_original.contains(*original_path) {
-            continue;
-        }
-        
-        let original_name = Path::new(original_path).file_name()
-            .map(|name| name.to_string_lossy().to_string())
-            .unwrap_or_default();
-            
-        let parent_path = Path::new(original_path).parent()
-            .map(|p| p.to_string_lossy().to_string())
-            .unwrap_or_default();
-        
-        // Find the most similar file in the modified files
-        let mut best_match = None;
-        let mut best_similarity = 0.0;
-        
-        for (modified_path, _) in &modified_files {
-            if processed_modified.contains(*modified_path) {
-                continue;
-            }
-            
-            let modified_name = Path::new(modified_path).file_name()
-                .map(|name| name.to_string_lossy().to_string())
-                .unwrap_or_default();
-                
-            let modified_parent = Path::new(modified_path).parent()
-                .map(|p| p.to_string_lossy().to_string())
-                .unwrap_or_default();
-            
-            // Check if files are in the same or similar directory
-            // Consider files in all directories, but with higher similarity requirement
-            // for files in different directories
-            let parent_match = parent_path == modified_parent || 
-                              processed_original.contains(&parent_path);
-            
-            let min_threshold = if parent_match { 0.3 } else { 0.6 };
-            let similarity = name_similarity(&original_name, &modified_name);
-            
-            if similarity > min_threshold && similarity > best_similarity {
-                best_similarity = similarity;
-                best_match = Some(modified_path);
-            }
-        }
-        
-        if let Some(modified_path) = best_match {
-            // Add rename operation
-            operations.push(FileOperation::Rename { 
-                from: base.join(original_path).to_string_lossy().to_string(),
-                to: base.join(modified_path).to_string_lossy().to_string()
-            });
-            
-            processed_original.insert((*original_path).clone());
-            processed_modified.insert((*modified_path).clone());
-        }
-    }
-    
-    // Step 4: Add creation operations for new directories
-    for (path, &is_dir) in modified_paths {
-        if !processed_modified.contains(path) && is_dir && !original_paths.contains_key(path) {
-            operations.push(FileOperation::CreateDir { 
-                path: base.join(path).to_string_lossy().to_string() 
-            });
-            processed_modified.insert(path.clone());
-        }
-    }
-    
-    // Step 5: Add creation operations for new files
-    for (path, &is_dir) in modified_paths {
-        if !processed_modified.contains(path) && !is_dir && !original_paths.contains_key(path) {
-            // This is a new file - but it might be created as part of a parent directory creation
-            let parent = Path::new(path).parent().map(|p| p.to_string_lossy().to_string());
-            if let Some(parent_path) = parent {
-                if !processed_modified.contains(&parent_path) && modified_paths.contains_key(&parent_path) {
-                    // Parent will be created, we don't need a separate operation
-                    processed_modified.insert(path.clone());
-                    continue;
-                }
-            }
-            
-            // Create file (handled by the backend as copy from an empty file)
-            operations.push(FileOperation::CreateDir { 
-                path: base.join(path).to_string_lossy().to_string() 
-            });
-            processed_modified.insert(path.clone());
-        }
-    }
-    
-    // Step 6: Add deletion operations
-    for (path, &is_dir) in original_paths {
-        if !processed_original.contains(path) {
-            operations.push(FileOperation::Delete { 
-                path: base.join(path).to_string_lossy().to_string() 
-            });
-            processed_original.insert(path.clone());
-        }
-    }
-    
-    // Sort operations for correct application order
-    // 1. First create directories
-    // 2. Then rename files/directories
-    // 3. Finally delete files/directories
-    operations.sort_by(|a, b| {
-        match (a, b) {
-            (FileOperation::CreateDir { .. }, FileOperation::Rename { .. }) => std::cmp::Ordering::Less,
-            (FileOperation::CreateDir { .. }, FileOperation::Delete { .. }) => std::cmp::Ordering::Less,
-            (FileOperation::Rename { .. }, FileOperation::Delete { .. }) => std::cmp::Ordering::Less,
-            (FileOperation::Rename { .. }, FileOperation::CreateDir { .. }) => std::cmp::Ordering::Greater,
-            (FileOperation::Delete { .. }, FileOperation::CreateDir { .. }) => std::cmp::Ordering::Greater,
-            (FileOperation::Delete { .. }, FileOperation::Rename { .. }) => std::cmp::Ordering::Greater,
-            _ => std::cmp::Ordering::Equal,
-        }
-    });
-    
-    Ok(operations)
-}
-
-// Helper function to get all children of a directory
-pub fn get_children(paths: &HashMap<String, bool>, dir_path: &str) -> HashMap<String, bool> {
-    let mut children = HashMap::new();
-    let prefix = if dir_path.ends_with('/') { dir_path } else { &format!("{}/", dir_path) };
-    
-    for (path, &is_dir) in paths {
-        if path != dir_path && path.starts_with(prefix) {
-            children.insert(path.clone(), is_dir);
-        }
-    }
-    
-    children
-}
-
-// Helper function to check if two directories are similar based on their children
-pub fn is_similar_directory(dir1: &HashMap<String, bool>, dir2: &HashMap<String, bool>, threshold: f64) -> bool {
-    if dir1.is_empty() && dir2.is_empty() {
-        return true;
-    }
-    
-    if dir1.is_empty() || dir2.is_empty() {
-        return false;
-    }
-    
-    // Get all filenames from both directories
-    let names1: HashSet<_> = dir1.keys()
-        .filter_map(|path| Path::new(path).file_name())
-        .map(|name| name.to_string_lossy().to_string())
-        .collect();
-    
-    let names2: HashSet<_> = dir2.keys()
-        .filter_map(|path| Path::new(path).file_name())
-        .map(|name| name.to_string_lossy().to_string())
-        .collect();
-    
-    // Calculate Jaccard similarity (intersection / union)
-    let intersection = names1.intersection(&names2).count() as f64;
-    let union = names1.union(&names2).count() as f64;
-    
-    intersection / union >= threshold
-}
-
-// Helper function to calculate string similarity
-pub fn name_similarity(name1: &str, name2: &str) -> f64 {
-    if name1 == name2 {
-        return 1.0;
-    }
-    
-    // Simple similarity measure: length of longest common substring / max length
-    let len1 = name1.chars().count();
-    let len2 = name2.chars().count();
-    
-    if len1 == 0 || len2 == 0 {
-        return 0.0;
-    }
-    
-    // Find common prefix
-    let common_prefix_len = name1.chars().zip(name2.chars())
-        .take_while(|(c1, c2)| c1 == c2)
-        .count();
-    
-    // Find common suffix
-    let common_suffix_len = name1.chars().rev().zip(name2.chars().rev())
-        .take_while(|(c1, c2)| c1 == c2)
-        .count();
-    
-    // Ensure we don't double-count in small strings
-    let common_len = std::cmp::min(common_prefix_len + common_suffix_len, std::cmp::max(len1, len2));
-    
-    common_len as f64 / std::cmp::max(len1, len2) as f64
-}
-
+// 其他辅助函数保持不变
 #[command]
 pub fn is_protected_path(path: &str) -> bool {
     let path = Path::new(path);

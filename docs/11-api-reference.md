@@ -10,71 +10,104 @@ TreeNamer 的 Rust 后端通过 Tauri 命令暴露以下功能：
 
 #### `parse_directory`
 
-解析目录并生成树形表示。
+解析目录结构并返回JSON表示。
 
-**参数：**
-
-- `path: String` - 要解析的目录路径
-- `options: DirectoryOptions` - 目录解析选项
-
-```typescript
-interface DirectoryOptions {
-  maxDepth: number;            // 最大递归深度
-  excludePattern: string;      // 排除文件/目录的正则表达式
-  followSymlinks: boolean;     // 是否跟随符号链接
-  showHidden: boolean;         // 是否显示隐藏文件
-}
+**签名:**
+```rust
+#[command]
+pub fn parse_directory(path: &str, options: Option<DirectoryOptions>) -> Result<String, String>
 ```
 
-**返回值：**
-
-- `Result<String, String>` - 成功时返回树形文本，失败时返回错误信息
-
-**示例：**
-
-```javascript
-const tree = await invoke('parse_directory', {
-  path: '/path/to/directory',
-  options: {
-    maxDepth: 5,
-    excludePattern: 'node_modules|.git',
-    followSymlinks: false,
-    showHidden: false
+**参数:**
+- `path`: 要解析的目录路径
+- `options`: 可选的目录解析选项对象:
+  ```rust
+  pub struct DirectoryOptions {
+      pub max_depth: usize,            // 递归深度限制
+      pub exclude_pattern: String,     // 排除的文件/目录正则表达式
+      pub follow_symlinks: bool,       // 是否跟踪符号链接
+      pub show_hidden: bool,           // 是否显示隐藏文件
   }
-});
+  ```
+
+**返回:**
+- 成功时: JSON字符串，包含目录树结构
+- 失败时: 错误消息
+
+**示例:**
+```typescript
+// 前端调用
+const treeJson = await invoke<string>('parse_directory', { path: '/path/to/directory' });
+const treeObject = JSON.parse(treeJson);
+```
+
+**JSON结构:**
+```json
+{
+  "id": "uuid-string-1",
+  "name": "root_dir",
+  "is_dir": true,
+  "children": [
+    {
+      "id": "uuid-string-2",
+      "name": "folder1",
+      "is_dir": true,
+      "children": [
+        {
+          "id": "uuid-string-3",
+          "name": "file1.txt",
+          "is_dir": false,
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "uuid-string-4",
+      "name": "file2.txt",
+      "is_dir": false,
+      "children": []
+    }
+  ]
+}
 ```
 
 ### 文件系统操作
 
 #### `apply_operations`
 
-应用文件系统操作（重命名、创建、删除）。
+根据原始和修改后的目录树JSON执行文件系统操作。
 
-**参数：**
-
-- `path: String` - 基础目录路径
-- `original_tree: String` - 原始目录树文本
-- `modified_tree: String` - 修改后的目录树文本
-
-**返回值：**
-
-- `Result<Vec<OperationResult>, String>` - 成功时返回操作结果数组，失败时返回错误信息
-
+**签名:**
 ```rust
-pub struct OperationResult {
-    pub success: bool,
-    pub message: String,
-}
+#[command]
+pub fn apply_operations(path: &str, original_tree: &str, modified_tree: &str) -> Result<Vec<OperationResult>, String>
 ```
 
-**示例：**
+**参数:**
+- `path`: 基础目录路径
+- `original_tree`: 原始目录树的JSON字符串
+- `modified_tree`: 修改后的目录树的JSON字符串
 
-```javascript
-const results = await invoke('apply_operations', {
+**返回:**
+- 成功时: 操作结果数组
+- 失败时: 错误消息
+
+**示例:**
+```typescript
+// 前端调用
+const results = await invoke<OperationResult[]>('apply_operations', {
   path: '/path/to/directory',
-  original_tree: originalTreeText,
-  modified_tree: modifiedTreeText
+  originalTree: originalJsonString,
+  modifiedTree: modifiedJsonString
 });
+```
+
+**操作结果类型:**
+```typescript
+interface OperationResult {
+  success: boolean;
+  message: string;
+}
 ```
 
 #### `generate_operations`
@@ -265,3 +298,109 @@ onUnmount(() => {
   unlisten();
 });
 ```
+
+## 文件系统操作 API
+
+### 目录解析
+
+```typescript
+/**
+ * 解析指定路径的目录结构，生成目录树
+ * @param dirPath 需要解析的目录路径
+ * @param options 可选的解析选项
+ * @returns 以JSON字符串表示的目录树结构
+ */
+function parseDirectory(
+  dirPath: string, 
+  options?: {
+    maxDepth?: number,          // 最大递归深度
+    excludePattern?: string,    // 排除模式
+    followSymlinks?: boolean,   // 是否跟随符号链接
+    showHidden?: boolean        // 是否显示隐藏文件
+  }
+): Promise<string>;
+```
+
+### 应用文件操作
+
+```typescript
+/**
+ * 应用文件系统重命名操作
+ * @param dirPath 根目录路径
+ * @param originalTree 原始目录树的JSON字符串表示
+ * @param modifiedTree 修改后目录树的JSON字符串表示
+ * @returns 操作结果列表
+ */
+function applyOperations(
+  dirPath: string,
+  originalTree: string,
+  modifiedTree: string
+): Promise<Array<{
+  success: boolean,
+  message: string
+}>>;
+```
+
+### 文件系统操作流程
+
+在内部，系统通过比较具有相同ID的节点在原始树和修改树中的路径来确定需要执行的重命名操作:
+
+1. **ID路径映射**: 从两棵树中提取ID到路径的映射
+2. **路径比较**: 对于每个共有的ID，比较其路径:
+   ```typescript
+   if (modifiedPaths[id] !== originalPaths[id]) {
+     // 生成重命名操作
+     operations.push({
+       from: originalPaths[id],
+       to: modifiedPaths[id]
+     });
+   }
+   ```
+3. **操作排序**: 按深度和类型(文件优先于目录)排序操作
+4. **执行操作**: 按排序后的顺序执行重命名操作
+
+### 数据结构
+
+#### TreeNode 结构
+
+```typescript
+interface TreeNode {
+  id: string;         // 唯一标识符
+  name: string;       // 文件或目录名
+  is_dir: boolean;    // 是否为目录
+  children: TreeNode[]; // 子节点列表
+}
+```
+
+#### 文件操作
+
+```typescript
+enum FileOperation {
+  Rename = "rename"
+}
+
+interface RenameOperation {
+  type: FileOperation.Rename;
+  from: string;
+  to: string;
+}
+```
+
+#### 操作结果
+
+```typescript
+interface OperationResult {
+  success: boolean;
+  message: string;
+}
+```
+
+### 错误处理
+
+文件系统操作可能返回以下错误:
+
+- `PathNotExist`: 指定的路径不存在
+- `NotADirectory`: 指定的路径不是目录
+- `PermissionDenied`: 没有足够权限执行操作
+- `ProtectedPath`: 尝试在受保护的系统路径上执行操作
+- `IoError`: 底层I/O错误

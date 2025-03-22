@@ -54,10 +54,22 @@ function App() {
       setError(null);
       
       console.log('Parsing directory:', path);
-      const result = await invoke<string>('parse_directory', { path });
+      console.log('Calling parse_directory with params:', { dirPath: path });
       
-      setTreeContent(result);
-      console.log('Tree content updated');
+      try {
+        const result = await invoke<string>('parse_directory', { dirPath: path });
+        console.log('Parse directory successful, received data length:', result?.length || 0);
+        setTreeContent(result);
+        console.log('Tree content updated');
+      } catch (invokeErr) {
+        console.error('Invoke error details:', {
+          error: invokeErr,
+          errorType: typeof invokeErr,
+          errorMessage: invokeErr instanceof Error ? invokeErr.message : String(invokeErr),
+          errorStack: invokeErr instanceof Error ? invokeErr.stack : undefined
+        });
+        throw invokeErr;
+      }
     } catch (err) {
       console.error('Error parsing directory:', err);
       setError(`解析目录时出错: ${err}`);
@@ -71,9 +83,8 @@ function App() {
       setError(null);
       console.log('Applying changes to directory:', directoryPath);
       
-      // 修复参数命名
       await invoke('apply_operations', { 
-        path: directoryPath,
+        dirPath: directoryPath,
         originalTree: treeContent, 
         modifiedTree: modifiedTree 
       });

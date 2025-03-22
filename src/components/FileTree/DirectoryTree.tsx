@@ -1,10 +1,13 @@
 import React, { useEffect, useState } from 'react';
+import { TreeNode } from '../../types/TreeNode';
+import { formatTreeToText, parseTextToTree } from '../../utils/treeUtils';
 import MonacoEditor from '../Editor/MonacoEditor';
 import './DirectoryTree.css';
+import TreeValidator from './TreeValidator';
 
 interface DirectoryTreeProps {
-  originalTree: string;
-  onApplyChanges: (modifiedTree: string) => Promise<void>;
+  originalTree: string; // JSON string of TreeNode
+  onApplyChanges: (modifiedTree: string) => Promise<void>; // JSON string of TreeNode
 }
 
 const DirectoryTree: React.FC<DirectoryTreeProps> = ({ 
@@ -14,15 +17,39 @@ const DirectoryTree: React.FC<DirectoryTreeProps> = ({
   const [modifiedTree, setModifiedTree] = useState<string>(originalTree);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [notification, setNotification] = useState<{ type: string; message: string } | null>(null);
+  const [treeView, setTreeView] = useState<string>('');
 
   // Reset tree when original changes
   useEffect(() => {
     setModifiedTree(originalTree);
+    
+    // Format JSON for display
+    try {
+      const parsedTree = JSON.parse(originalTree) as TreeNode;
+      const formattedText = formatTreeToText(parsedTree);
+      setTreeView(formattedText);
+    } catch (error) {
+      console.error('Error parsing tree JSON:', error);
+      setTreeView('Error parsing tree data');
+    }
   }, [originalTree]);
 
-  // Handle tree modifications
+  // Handle tree modifications in text format
   const handleModifiedTreeChange = (newValue: string) => {
-    setModifiedTree(newValue);
+    setTreeView(newValue);
+    
+    try {
+      // Parse text back to tree structure
+      const parsedTree = parseTextToTree(newValue, originalTree);
+      if (parsedTree) {
+        // Convert tree to JSON
+        const jsonTree = JSON.stringify(parsedTree);
+        setModifiedTree(jsonTree);
+      }
+    } catch (error) {
+      console.error('Error parsing modified tree:', error);
+      // Still update the text view even if parsing fails
+    }
   };
 
   // Handle apply changes
@@ -49,7 +76,7 @@ const DirectoryTree: React.FC<DirectoryTreeProps> = ({
   return (
     <div className="directory-tree-container">
       <div className="tree-operations-layout">
-        {/* Tree view editor */}
+        {/* Tree view editor - now showing formatted text representation of JSON tree */}
         <div className="tree-view">
           {isLoading && (
             <div className="loading-overlay">
@@ -57,7 +84,7 @@ const DirectoryTree: React.FC<DirectoryTreeProps> = ({
             </div>
           )}
           <MonacoEditor 
-            value={modifiedTree} 
+            value={treeView} 
             onChange={handleModifiedTreeChange} 
             height="500px"
           />
@@ -80,6 +107,9 @@ const DirectoryTree: React.FC<DirectoryTreeProps> = ({
             {notification.message}
           </div>
         )}
+        
+        {/* Add Tree Validator component in debug mode */}
+        {import.meta.env.DEV && <TreeValidator treeText={treeView} treeJson={originalTree} />}
       </div>
     </div>
   );

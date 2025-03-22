@@ -4,7 +4,7 @@ import './MonacoEditor.css';
 
 interface MonacoEditorProps {
   value: string;
-  onChange: (value: string) => void;
+  onChange: (newValue: string) => void;
   height?: string;
   language?: string;
 }
@@ -15,56 +15,63 @@ const MonacoEditor: React.FC<MonacoEditorProps> = ({
   height = '500px',
   language = 'plaintext'
 }) => {
-  const editorRef = useRef<HTMLDivElement>(null);
-  const monacoEditorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
+  const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const valueRef = useRef<string>(value); // Keep track of the latest value
 
   useEffect(() => {
-    if (editorRef.current) {
-      // 创建编辑器
-      monacoEditorRef.current = monaco.editor.create(editorRef.current, {
+    if (containerRef.current) {
+      // Create editor with simple default configuration
+      const editor = monaco.editor.create(containerRef.current, {
         value,
         language,
-        theme: 'vs', // 可以使用'vs', 'vs-dark'或'hc-black'
-        automaticLayout: true,
+        theme: 'vs', // Use default light theme
         minimap: { enabled: false },
-        fontSize: 14,
-        lineNumbers: 'on',
         scrollBeyondLastLine: false,
-        wordWrap: 'on',
-        glyphMargin: false,
+        lineNumbers: 'on',
+        folding: true,
+        fontSize: 14,
+        automaticLayout: true
       });
-
-      // 监听内容变更事件
-      monacoEditorRef.current.onDidChangeModelContent(() => {
-        if (monacoEditorRef.current) {
-          const newValue = monacoEditorRef.current.getValue();
-          onChange(newValue);
-        }
+      
+      editorRef.current = editor;
+      
+      // Listen for changes
+      const changeDisposable = editor.onDidChangeModelContent(() => {
+        const newValue = editor.getValue();
+        valueRef.current = newValue;
+        onChange(newValue);
       });
-
-      // 销毁编辑器
+      
       return () => {
-        if (monacoEditorRef.current) {
-          monacoEditorRef.current.dispose();
-          monacoEditorRef.current = null;
-        }
+        changeDisposable.dispose();
+        editor.dispose();
       };
     }
   }, []);
-
-  // 当外部传入的value变化时，更新编辑器内容
+  
+  // Handle value updates from outside
   useEffect(() => {
-    if (monacoEditorRef.current) {
-      const currentValue = monacoEditorRef.current.getValue();
-      if (value !== currentValue) {
-        monacoEditorRef.current.setValue(value);
+    if (editorRef.current && value !== valueRef.current) {
+      const editor = editorRef.current;
+      
+      // Save cursor position 
+      const currentPosition = editor.getPosition();
+      
+      // Update value
+      editor.setValue(value);
+      valueRef.current = value;
+      
+      // Restore cursor position
+      if (currentPosition) {
+        editor.setPosition(currentPosition);
       }
     }
   }, [value]);
 
   return (
     <div 
-      ref={editorRef} 
+      ref={containerRef} 
       className="monaco-editor-container" 
       style={{ height }}
     />

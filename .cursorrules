@@ -43,6 +43,125 @@
 
 - **Tauri v2 Dialog Permission**: In Tauri v2, dialog permissions must be configured in `src-tauri/capabilities/default.json` with `"dialog:default"` instead of in `tauri.conf.json`
 - **Unicode Handling in Tree Parsing**: When parsing tree structures with Unicode characters like `├──`, use character-aware methods instead of byte indices. In `parse_tree_text` function, use methods like `chars().nth()` or proper Unicode-aware slicing instead of string indexing to avoid "byte index is not a char boundary" errors.
+- **Tauri Parameter Naming Convention**: Rust code typically uses `snake_case` for parameters, while JavaScript/TypeScript uses `camelCase`. When using Tauri commands, explicitly define parameter naming with attribute `#[allow(non_snake_case)]` before parameter names to use `camelCase` parameter names in the Rust code (like `dirPath` instead of `dir_path`). This ensures proper parameter matching between JavaScript and Rust. Example:
+
+  ```rust
+  #[command]
+  pub fn parse_directory(
+      #[allow(non_snake_case)] dirPath: String, 
+      options: Option<DirectoryOptions>
+  ) -> Result<String, String> {
+      // Now JavaScript can call this with { dirPath: path }
+  }
+  ```
+
+- **ID Preservation for TreeNode Entity Tracking**: The ID system in TreeNamer preserves entity identities across tree modifications. Each node in the TreeNode structure has a unique ID that should remain constant even when renaming files. The frontend needs to maintain these IDs when parsing tree text back to JSON. IDs are used to track which files have been renamed - matching IDs with different paths indicates a rename operation. In the node parsing logic, always preserve original IDs from line-to-ID mapping instead of generating new ones. Example:
+
+  ```typescript
+  // Create mapping between line numbers and node IDs in original tree
+  const idMapping = new Map<number, string>(); // lineNumber -> nodeId
+  
+  // When parsing text back to tree, use the original ID for each line
+  const nodeId = idMapping.get(lineNumber) || generateNewId();
+  
+  // Create node with preserved ID
+  const node = {
+    id: nodeId,  // Using original ID preserves entity identity
+    name: nodeName,
+    is_dir: isDirectory,
+    children: []
+  };
+  ```
+
+- **Tree Formatting Characters in Filename Parsing**: When parsing tree text back to a tree structure, be careful to properly extract filenames without including tree formatting characters like `├──`, `└──`, or `│`. Use regular expressions to identify and remove these characters from the actual filename. Example:
+
+  ```typescript
+  // Regular expression to extract the actual filename from a line with tree formatting
+  const treeFormatMatch = text.match(/^(?:[│├└]\s*[─┬┴]\s*)+\s(.+)$/);
+  if (treeFormatMatch && treeFormatMatch[1]) {
+    // Extract just the filename portion
+    filename = treeFormatMatch[1];
+  }
+  ```
+
+- **Duplicate Path Handling in File Operations**: When building paths for file operations, be careful not to duplicate the base directory name in the paths. This can happen when the TreeNode structure includes the base directory name and then this is appended to the base path again. Always check and fix paths to avoid issues like `D:\__temp\__temp\file.txt` which should be just `D:\__temp\file.txt`. Example:
+
+  ```rust
+  // Check for and fix duplicate directory segments in paths
+  fn fix_duplicate_path(path: &str, base_name: &str) -> String {
+      // Find consecutive components with the same name as base_name
+      // and remove the duplication
+      // ...
+  }
+  ```
+
+- **Frontend Testing for TreeNode Parsing**: Always write tests for the frontend tree parsing logic to ensure it correctly handles tree formatting characters and preserves node IDs. Create test cases for various scenarios including nested directories, special characters, and edge cases. Example test for DirectoryTree's parseTextToTree function:
+
+  ```typescript
+  // Test case for parseTextToTree function
+  describe('parseTextToTree', () => {
+    it('should correctly parse tree text with formatting characters', () => {
+      // Create a sample tree text with formatting
+      const treeText = `__temp/
+  ├── folder1/
+  │   ├── file1.txt
+  │   └── file2.txt
+  └── folder2/
+      └── file3.txt`;
+      
+      // Create a mock ID mapping (usually from buildIdMapping)
+      const mockIdMapping = new Map([
+        [0, 'root-id'],
+        [1, 'folder1-id'],
+        [2, 'file1-id'],
+        [3, 'file2-id'],
+        [4, 'folder2-id'],
+        [5, 'file3-id']
+      ]);
+      
+      // Mock the buildIdMapping function
+      jest.spyOn(component, 'buildIdMapping').mockReturnValue(mockIdMapping);
+      
+      // Call the function
+      const result = component.parseTextToTree(treeText);
+      
+      // Verify the resulting tree structure
+      expect(result).not.toBeNull();
+      expect(result?.name).toBe('__temp');
+      expect(result?.children.length).toBe(2);
+      
+      // Verify the first folder and its contents
+      const folder1 = result?.children[0];
+      expect(folder1?.name).toBe('folder1');
+      expect(folder1?.is_dir).toBe(true);
+      expect(folder1?.id).toBe('folder1-id');
+      expect(folder1?.children.length).toBe(2);
+      
+      // Verify files have correct names without formatting characters
+      expect(folder1?.children[0].name).toBe('file1.txt');
+      expect(folder1?.children[1].name).toBe('file2.txt');
+    });
+  });
+
+- **Frontend Utility Extraction**: Always extract complex logic into separate utility functions that can be independently tested. Key benefits:
+  1. Makes code more maintainable by promoting separation of concerns
+  2. Enables thorough testing of logic without UI dependencies 
+  3. Simplifies debugging of complex algorithms
+  4. Improves code reuse across components
+
+  Example directory structure:
+  ```
+  src/
+  ├── components/
+  │   └── FileTree/
+  │       └── DirectoryTree.tsx  # UI Component
+  ├── types/
+  │   └── TreeNode.ts  # Type definitions
+  ├── utils/
+  │   ├── treeUtils.ts  # Extracted logic
+  │   └── __tests__/
+  │       └── treeUtils.test.ts  # Dedicated tests
+  ```
 
 {{ARCHITECTURE_UPDATE}}
 {{BEST_PRACTICES}}

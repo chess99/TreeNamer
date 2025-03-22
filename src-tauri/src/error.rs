@@ -3,13 +3,13 @@ use std::fmt;
 
 #[derive(Debug, Serialize)]
 pub enum ErrorType {
-    PERMISSION_DENIED,
-    FILE_NOT_FOUND,
-    PATH_ALREADY_EXISTS,
-    SYSTEM_ERROR,
-    USER_ABORT,
-    INVALID_FILENAME,
-    DISK_FULL,
+    PermissionDenied,
+    FileNotFound,
+    PathAlreadyExists,
+    SystemError,
+    UserAbort,
+    InvalidFilename,
+    DiskFull,
 }
 
 #[derive(Debug, Serialize)]
@@ -30,25 +30,25 @@ impl From<std::io::Error> for AppError {
     fn from(error: std::io::Error) -> Self {
         match error.kind() {
             std::io::ErrorKind::PermissionDenied => AppError {
-                error_type: ErrorType::PERMISSION_DENIED,
+                error_type: ErrorType::PermissionDenied,
                 message: "Permission denied".into(),
                 path: None,
                 recoverable: false,
             },
             std::io::ErrorKind::NotFound => AppError {
-                error_type: ErrorType::FILE_NOT_FOUND,
+                error_type: ErrorType::FileNotFound,
                 message: "File not found".into(),
                 path: None,
                 recoverable: false,
             },
             std::io::ErrorKind::AlreadyExists => AppError {
-                error_type: ErrorType::PATH_ALREADY_EXISTS,
+                error_type: ErrorType::PathAlreadyExists,
                 message: "Path already exists".into(),
                 path: None,
                 recoverable: true,
             },
             _ => AppError {
-                error_type: ErrorType::SYSTEM_ERROR,
+                error_type: ErrorType::SystemError,
                 message: error.to_string(),
                 path: None,
                 recoverable: false,
