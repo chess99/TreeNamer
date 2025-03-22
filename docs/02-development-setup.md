@@ -1,4 +1,4 @@
-# TreeNamer Development Prerequisites
+# Development Environment Setup
 
 This document outlines all the necessary prerequisites and setup steps to develop or run the TreeNamer application.
 
@@ -142,4 +142,4 @@ If you encounter plugin-related errors, verify that:
 - 4GB RAM (8GB recommended)
 - Modern CPU (dual-core or better)
 - 1GB free disk space
-- Windows 10/11, macOS 10.15+, or modern Linux distribution
+- Windows 10/11, macOS 10.15+, or modern Linux distribution 

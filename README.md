@@ -10,55 +10,25 @@ TreeNamer is a directory tree visualization and renaming tool built with Tauri, 
 - Safe application of changes with automatic backups
 - Cross-platform support (Windows, macOS, Linux)
 
-## Development Setup
+## Documentation
+
+- [Project Overview](docs/01-project-overview.md)
+- [Development Setup](docs/02-development-setup.md)
+- [Product Design Document](docs/Product%20Design%20Document.md)
+- [Technical Solution Design](docs/Technical%20Solution%20Design.md)
+- [Implementation Action Plan](docs/Implementation%20Action%20Plan.md)
+
+## Quick Start
 
 ### Prerequisites
 
-**IMPORTANT**: This project requires specific development environment setup. For detailed prerequisites and troubleshooting, please refer to the [Prerequisites Guide](PREREQUISITES.md).
+**IMPORTANT**: This project requires specific development environment setup. For detailed prerequisites and troubleshooting, please refer to the [Development Setup](docs/02-development-setup.md) guide.
 
 Quick summary of requirements:
 
 - **Node.js**: Version 22.11.0 (configured via .nvmrc)
-
-  ```bash
-  # If you use nvm, simply run:
-  nvm use
-  ```
-
 - **Rust**: **Nightly channel** required for Tauri 2.0 beta
-
-  ```bash
-  # Install and use nightly
-  rustup toolchain install nightly
-  rustup override set nightly
-  ```
-
 - **pnpm**: For package management
-
-  ```bash
-  npm install -g pnpm
-  ```
-
-### System Dependencies
-
-#### Windows
-
-- Visual Studio Build Tools with "Desktop development with C++" workload
-- See [Prerequisites Guide](PREREQUISITES.md) for detailed instructions
-
-#### macOS
-
-```bash
-brew install webkit2gtk-4.1
-xcode-select --install
-```
-
-#### Linux (Ubuntu/Debian)
-
-```bash
-sudo apt update
-sudo apt install -y libwebkit2gtk-4.1-dev build-essential curl wget file libssl-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev
-```
 
 ### Installation
 
