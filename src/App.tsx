@@ -69,9 +69,13 @@ function App() {
   const handleApplyChanges = async (modifiedTree: string) => {
     try {
       setError(null);
+      console.log('Applying changes to directory:', directoryPath);
+      
+      // 修复参数命名
       await invoke('apply_operations', { 
-        directory: directoryPath, 
-        treeContent: modifiedTree 
+        path: directoryPath,
+        originalTree: treeContent, 
+        modifiedTree: modifiedTree 
       });
       
       // Re-parse the directory to show updated tree

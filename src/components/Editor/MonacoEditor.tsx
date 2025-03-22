@@ -1,76 +1,74 @@
 import * as monaco from 'monaco-editor';
-import { useEffect, useRef } from 'react';
+import React, { useEffect, useRef } from 'react';
+import './MonacoEditor.css';
 
 interface MonacoEditorProps {
   value: string;
-  onChange?: (value: string) => void;
-  readOnly?: boolean;
+  onChange: (value: string) => void;
   height?: string;
+  language?: string;
 }
 
-const MonacoEditor = ({ 
-  value, 
-  onChange, 
-  readOnly = false, 
-  height = '100%'
-}: MonacoEditorProps) => {
+const MonacoEditor: React.FC<MonacoEditorProps> = ({
+  value,
+  onChange,
+  height = '500px',
+  language = 'plaintext'
+}) => {
   const editorRef = useRef<HTMLDivElement>(null);
-  const monacoInstanceRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
+  const monacoEditorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
 
-  // Create editor instance
   useEffect(() => {
     if (editorRef.current) {
-      console.log("[MonacoEditor] Creating editor instance");
-
-      // Create editor instance with minimal configuration
-      monacoInstanceRef.current = monaco.editor.create(editorRef.current, {
+      // 创建编辑器
+      monacoEditorRef.current = monaco.editor.create(editorRef.current, {
         value,
-        language: 'plaintext',
-        minimap: { enabled: false },
-        scrollBeyondLastLine: false,
-        lineNumbers: 'on',
-        readOnly,
+        language,
+        theme: 'vs', // 可以使用'vs', 'vs-dark'或'hc-black'
         automaticLayout: true,
+        minimap: { enabled: false },
         fontSize: 14,
-        fontFamily: 'monospace',
-        mouseStyle: 'text',
-        wordWrap: 'off'
+        lineNumbers: 'on',
+        scrollBeyondLastLine: false,
+        wordWrap: 'on',
+        glyphMargin: false,
       });
 
-      // Add change event listener
-      if (onChange && !readOnly) {
-        monacoInstanceRef.current.onDidChangeModelContent(() => {
-          const newValue = monacoInstanceRef.current?.getValue() || '';
+      // 监听内容变更事件
+      monacoEditorRef.current.onDidChangeModelContent(() => {
+        if (monacoEditorRef.current) {
+          const newValue = monacoEditorRef.current.getValue();
           onChange(newValue);
-        });
-      }
+        }
+      });
 
-      // Listen for theme changes
-      const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
-      const handleThemeChange = (e: MediaQueryListEvent) => {
-        monaco.editor.setTheme(e.matches ? 'vs-dark' : 'vs');
-      };
-      mediaQuery.addEventListener('change', handleThemeChange);
-
+      // 销毁编辑器
       return () => {
-        console.log("[MonacoEditor] Disposing editor instance");
-        mediaQuery.removeEventListener('change', handleThemeChange);
-        monacoInstanceRef.current?.dispose();
+        if (monacoEditorRef.current) {
+          monacoEditorRef.current.dispose();
+          monacoEditorRef.current = null;
+        }
       };
     }
   }, []);
 
-  // Update editor value when prop changes
+  // 当外部传入的value变化时，更新编辑器内容
   useEffect(() => {
-    if (monacoInstanceRef.current) {
-      const currentValue = monacoInstanceRef.current.getValue();
+    if (monacoEditorRef.current) {
+      const currentValue = monacoEditorRef.current.getValue();
       if (value !== currentValue) {
-        monacoInstanceRef.current.setValue(value);
+        monacoEditorRef.current.setValue(value);
       }
     }
   }, [value]);
 
-  return <div ref={editorRef} style={{ width: '100%', height }} />;
+  return (
+    <div 
+      ref={editorRef} 
+      className="monaco-editor-container" 
+      style={{ height }}
+    />
+  );
 };
 
 export default MonacoEditor; 

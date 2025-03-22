@@ -1,0 +1,56 @@
+.monaco-editor-container {
+  width: 100%;
+  height: 100%;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.monaco-editor .monaco-editor-background,
+.monaco-editor .margin-view-overlays {
+  background-color: #fcfcfc;
+}
+
+/* 确保文本可选择 */
+.monaco-editor .view-lines {
+  user-select: text !important;
+  -webkit-user-select: text !important;
+  cursor: text !important;
+}
+
+/* 高亮创建、修改和删除的节点 */
+.created-node {
+  background-color: rgba(0, 255, 0, 0.1);
+  border-left: 3px solid green;
+}
+
+.modified-node {
+  background-color: rgba(255, 255, 0, 0.1);
+  border-left: 3px solid orange;
+}
+
+.deleted-node {
+  background-color: rgba(255, 0, 0, 0.1);
+  border-left: 3px solid red;
+  text-decoration: line-through;
+}
+
+/* 暗色模式支持 */
+@media (prefers-color-scheme: dark) {
+  .monaco-editor .monaco-editor-background,
+  .monaco-editor .margin-view-overlays {
+    background-color: #1e1e1e;
+  }
+  
+  .created-node {
+    background-color: rgba(0, 100, 0, 0.3);
+  }
+  
+  .modified-node {
+    background-color: rgba(100, 100, 0, 0.3);
+  }
+  
+  .deleted-node {
+    background-color: rgba(100, 0, 0, 0.3);
+  }
+} 
