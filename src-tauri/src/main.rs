@@ -22,7 +22,6 @@ fn main() {
             commands::apply_operations,
             commands::is_protected_path,
             commands::create_backup,
-            commands::undo_last_change,
             commands::list_backups,
         ])
         .run(tauri::generate_context!())

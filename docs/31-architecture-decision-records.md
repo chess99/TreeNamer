@@ -298,4 +298,3 @@ The virtual backup system:
   - Linux: `~/.treenamer/backups`
 - Keeps only the most recent 20 backups per directory
 - Uses JSON for human-readable backup format
-- Stores state in the frontend for quick access to undo functionality

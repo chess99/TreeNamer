@@ -25,7 +25,6 @@ This document provides an overview of the current implementation status of the T
 
 - ✅ Creating virtual tree backups
 - ✅ Centralized backup storage in user app data directories
-- ✅ Undo functionality for most recent changes
 - ✅ Automatic backup cleanup (limiting number of backups)
 
 ### Frontend Features (React)
@@ -49,7 +48,6 @@ This document provides an overview of the current implementation status of the T
 - ✅ Directory settings modal
 - ✅ Confirmation dialog for applying changes
 - ✅ Notifications for feedback
-- ✅ Undo button for reverting recent changes
 
 #### State Management
 
@@ -58,7 +56,6 @@ This document provides an overview of the current implementation status of the T
 - ✅ Error handling
 - ✅ Loading state management
 - ✅ Change application
-- ✅ Undo support
 
 ## Recent Improvements
 
@@ -67,12 +64,9 @@ This document provides an overview of the current implementation status of the T
    - Improved feedback with notifications system
    - Enhanced UI with loading indicators and disabled states
 
-2. **Simplified Backup and Undo System**
-   - Replaced complex backup management with a simple undo function
+2. **Simplified Backup System**
    - Implemented lightweight JSON-based virtual backups
-   - Added automatic cleanup of old backups
    - Configured centralized backup storage in platform-specific app data directories
-   - Improved user experience with simplified undo workflow
 
 3. **User Experience Enhancements**
    - Added real-time change preview
@@ -112,13 +106,7 @@ This document provides an overview of the current implementation status of the T
 
 2. **Batch Operations**
    - Support for batch renaming with patterns
-   - Improved undo/redo functionality (multiple steps)
    - Operation history
-
-3. **Configuration and Preferences**
-   - User preferences storage
-   - Custom themes
-   - Keyboard shortcuts
 
 ## Development Roadmap
 

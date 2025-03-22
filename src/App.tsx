@@ -16,9 +16,7 @@ function App() {
     setDirectoryPath, 
     loadDirectory, 
     applyChanges,
-    resetError,
-    undoLastChange,
-    lastBackupPath
+    resetError
   } = useDirectoryStore();
 
   // Reset error when directoryPath changes
@@ -32,10 +30,9 @@ function App() {
       directoryPath, 
       hasTree: !!originalTree,
       isLoading,
-      hasError: !!error,
-      hasBackup: !!lastBackupPath
+      hasError: !!error
     });
-  }, [directoryPath, originalTree, isLoading, error, lastBackupPath]);
+  }, [directoryPath, originalTree, isLoading, error]);
 
   const handleOpenDirectory = async () => {
     try {
@@ -85,16 +82,6 @@ function App() {
           setShowSettings(true);
         }} disabled={isLoading || !directoryPath}>
           Settings
-        </button>
-        <button 
-          type="button" 
-          onClick={() => {
-            console.log("Undo button clicked");
-            undoLastChange();
-          }} 
-          disabled={isLoading || !directoryPath || !lastBackupPath}
-        >
-          {isLoading ? "Processing..." : "Undo"}
         </button>
       </div>
 

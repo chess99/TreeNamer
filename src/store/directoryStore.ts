@@ -24,14 +24,11 @@ interface BackupInfo {
 interface DirectoryState {
   directoryPath: string;
   originalTree: string;
-  lastUndoPoint: string | null;
   isLoading: boolean;
   error: string | null;
-  lastBackupPath: string | null;
   setDirectoryPath: (path: string) => void;
   loadDirectory: (options?: Partial<DirectoryOptions>) => Promise<void>;
   applyChanges: (modifiedTree: string) => Promise<void>;
-  undoLastChange: () => Promise<void>;
   resetError: () => void;
 }
 
@@ -45,10 +42,8 @@ const defaultOptions: DirectoryOptions = {
 export const useDirectoryStore = create<DirectoryState>((set, get) => ({
   directoryPath: '',
   originalTree: '',
-  lastUndoPoint: null,
   isLoading: false,
   error: null,
-  lastBackupPath: null,
 
   setDirectoryPath: (path) => set({ directoryPath: path }),
 
@@ -81,9 +76,7 @@ export const useDirectoryStore = create<DirectoryState>((set, get) => ({
       
       set({ 
         originalTree: result, 
-        isLoading: false,
-        lastUndoPoint: null,
-        lastBackupPath: null 
+        isLoading: false
       });
     } catch (e) {
       console.error('Error loading directory:', e);
@@ -110,9 +103,6 @@ export const useDirectoryStore = create<DirectoryState>((set, get) => ({
       console.log('Starting to apply changes...');
       set({ isLoading: true, error: null });
       
-      // Save current state as undo point
-      set({ lastUndoPoint: originalTree });
-      
       console.log('Creating virtual backup...');
       // Create a virtual backup before applying changes
       const backupInfo = await invoke<BackupInfo>('create_backup', { 
@@ -121,9 +111,6 @@ export const useDirectoryStore = create<DirectoryState>((set, get) => ({
       });
       
       console.log('Backup created:', backupInfo);
-      // Store the backup path for potential undo
-      set({ lastBackupPath: backupInfo.path });
-      console.log('Last backup path set to:', backupInfo.path);
       
       console.log('Applying operations...');
       // Call the Rust function to apply the changes
@@ -160,54 +147,6 @@ export const useDirectoryStore = create<DirectoryState>((set, get) => ({
       console.error('Error applying changes:', e);
       set({ error: String(e), isLoading: false });
       return Promise.reject(e);
-    }
-  },
-  
-  undoLastChange: async () => {
-    const { directoryPath, lastBackupPath } = get();
-    
-    if (!directoryPath) {
-      console.error('Error: No directory path specified');
-      set({ error: 'No directory path specified' });
-      return;
-    }
-    
-    console.log('Starting undo last change...', { directoryPath, lastBackupPath });
-    
-    try {
-      set({ isLoading: true, error: null });
-      
-      // 直接调用后端的撤销函数
-      console.log('Calling undo_last_change with path:', directoryPath);
-      await invoke('undo_last_change', { path: directoryPath });
-      console.log('undo_last_change completed successfully');
-      
-      // 重新加载目录
-      const rustOptions: RustDirectoryOptions = {
-        max_depth: defaultOptions.maxDepth,
-        exclude_pattern: defaultOptions.excludePattern,
-        follow_symlinks: defaultOptions.followSymlinks,
-        show_hidden: defaultOptions.showHidden
-      };
-      
-      console.log('Reloading directory after undo...');
-      const result = await invoke<string>('parse_directory', { 
-        path: directoryPath,
-        options: rustOptions
-      });
-      console.log('Directory reload completed');
-      
-      set({ 
-        originalTree: result, 
-        isLoading: false,
-        error: null,
-        lastUndoPoint: null,
-        lastBackupPath: null
-      });
-      console.log('Undo operation completed successfully');
-    } catch (e) {
-      console.error('Error undoing changes:', e);
-      set({ error: String(e), isLoading: false });
     }
   },
 

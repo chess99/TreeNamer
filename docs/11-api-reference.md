@@ -174,28 +174,6 @@ const backups = await invoke('list_backups', {
 });
 ```
 
-#### `restore_backup`
-
-从备份恢复目录。
-
-**参数：**
-
-- `backup_path: String` - 备份路径
-- `target_path: String` - 恢复目标路径
-
-**返回值：**
-
-- `Result<bool, String>` - 成功时返回 true，失败时返回错误信息
-
-**示例：**
-
-```javascript
-const success = await invoke('restore_backup', {
-  backup_path: backupPath,
-  target_path: '/path/to/directory'
-});
-```
-
 ## 前端 API
 
 TreeNamer 前端提供以下主要 API：
@@ -271,7 +249,6 @@ interface BackupState {
   // 行为
   loadBackups: (path: string) => Promise<void>;
   createBackup: (path: string) => Promise<string>;
-  restoreBackup: (backupPath: string, targetPath: string) => Promise<boolean>;
 }
 ```
 
@@ -284,8 +261,7 @@ import { useBackupStore } from '../store/backupStore';
 const { 
   backups, 
   loadBackups, 
-  createBackup, 
-  restoreBackup 
+  createBackup
 } = useBackupStore();
 
 // 加载备份
@@ -293,9 +269,6 @@ await loadBackups('/path/to/directory');
 
 // 创建备份
 const backupPath = await createBackup('/path/to/directory');
-
-// 恢复备份
-const success = await restoreBackup(backupPath, '/path/to/directory');
 ```
 
 ### 实用工具 API
