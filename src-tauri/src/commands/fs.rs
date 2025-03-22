@@ -20,12 +20,26 @@ pub struct OperationResult {
 
 #[command]
 pub fn apply_operations(path: &str, original_tree: &str, modified_tree: &str) -> Result<Vec<OperationResult>, String> {
+    println!("apply_operations called with path: {}", path);
+    
+    let base_path = Path::new(path);
+    if !base_path.exists() {
+        println!("Error: Path does not exist: {}", base_path.display());
+        return Err(format!("Path does not exist: {}", base_path.display()));
+    }
+    
+    println!("Extracting paths from tree strings...");
     // Parse the original and modified trees
     let original_paths = parse_tree_text(original_tree)?;
     let modified_paths = parse_tree_text(modified_tree)?;
     
+    println!("Original paths: {}, Modified paths: {}", original_paths.len(), modified_paths.len());
+    
+    println!("Generating operations...");
     // Generate operations
     let operations = generate_operations(path, &original_paths, &modified_paths)?;
+    
+    println!("Generated {} operations", operations.len());
     
     // Apply operations
     let mut results = Vec::new();
@@ -66,6 +80,7 @@ pub fn apply_operations(path: &str, original_tree: &str, modified_tree: &str) ->
         }
     }
     
+    println!("All operations applied successfully");
     Ok(results)
 }
 
@@ -121,7 +136,7 @@ fn apply_operation(operation: &FileOperation) -> OperationResult {
             
             match result {
                 Ok(_) => OperationResult {
-                    success: true,
+        success: true,
                     message: format!("Deleted {}", path),
                 },
                 Err(e) => OperationResult {
@@ -133,7 +148,7 @@ fn apply_operation(operation: &FileOperation) -> OperationResult {
     }
 }
 
-fn parse_tree_text(tree_text: &str) -> Result<HashMap<String, bool>, String> {
+pub fn parse_tree_text(tree_text: &str) -> Result<HashMap<String, bool>, String> {
     let mut paths = HashMap::new();
     let lines: Vec<&str> = tree_text.split('\n').collect();
     
@@ -194,7 +209,7 @@ fn parse_tree_text(tree_text: &str) -> Result<HashMap<String, bool>, String> {
     Ok(paths)
 }
 
-fn generate_operations(
+pub fn generate_operations(
     base_path: &str, 
     original_paths: &HashMap<String, bool>, 
     modified_paths: &HashMap<String, bool>
@@ -221,23 +236,35 @@ fn generate_operations(
     original_dirs.sort_by(|a, b| b.len().cmp(&a.len()));
     modified_dirs.sort_by(|a, b| b.len().cmp(&a.len()));
     
-    // Step 1: Detect directory renames by comparing contents
-    for original_dir in &original_dirs {
-        if processed_original.contains(*original_dir) {
+    // Step 1: Detect root directory renames first (special case)
+    // Find original directories without parents (root level)
+    let root_original_dirs: Vec<_> = original_dirs.iter()
+        .filter(|path| !path.contains('/') && !processed_original.contains(**path))
+        .collect();
+    
+    // Find modified directories without parents (root level)
+    let root_modified_dirs: Vec<_> = modified_dirs.iter()
+        .filter(|path| !path.contains('/') && !processed_modified.contains(**path))
+        .collect();
+    
+    // Try to match root directories by content similarity
+    for &original_dir in &root_original_dirs {
+        let original_children = get_children(original_paths, original_dir);
+        
+        // If no children, use a name similarity approach
+        if original_children.is_empty() {
             continue;
         }
         
-        let original_children = get_children(original_paths, original_dir);
-        
-        for modified_dir in &modified_dirs {
+        for &modified_dir in &root_modified_dirs {
             if processed_modified.contains(*modified_dir) || original_dir == modified_dir {
                 continue;
             }
             
             let modified_children = get_children(modified_paths, modified_dir);
             
-            // Calculate similarity between directories
-            if is_similar_directory(&original_children, &modified_children, 0.7) {
+            // Try a more lenient threshold for root directories
+            if is_similar_directory(&original_children, &modified_children, 0.3) {
                 // We found a probable directory rename
                 processed_original.insert((*original_dir).clone());
                 processed_modified.insert((*modified_dir).clone());
@@ -262,7 +289,50 @@ fn generate_operations(
         }
     }
     
-    // Step 2: Look for file renames by comparing name similarity
+    // Step 2: Detect other directory renames by comparing contents
+    for original_dir in &original_dirs {
+        if processed_original.contains(*original_dir) {
+            continue;
+        }
+        
+        let original_children = get_children(original_paths, original_dir);
+        
+        for modified_dir in &modified_dirs {
+            if processed_modified.contains(*modified_dir) || original_dir == modified_dir {
+                continue;
+            }
+            
+            let modified_children = get_children(modified_paths, modified_dir);
+            
+            // Calculate similarity between directories
+            // Use a lower threshold for root level directories
+            let threshold = if original_dir.contains('/') { 0.7 } else { 0.5 };
+            if is_similar_directory(&original_children, &modified_children, threshold) {
+                // We found a probable directory rename
+                processed_original.insert((*original_dir).clone());
+                processed_modified.insert((*modified_dir).clone());
+                
+                // Add the rename operation
+                operations.push(FileOperation::Rename { 
+                    from: base.join(original_dir).to_string_lossy().to_string(),
+                    to: base.join(modified_dir).to_string_lossy().to_string()
+                });
+                
+                // Mark all children as processed so we don't process them again
+                for child in original_children.keys() {
+                    processed_original.insert(child.clone());
+                }
+                
+                for child in modified_children.keys() {
+                    processed_modified.insert(child.clone());
+                }
+                
+                break;
+            }
+        }
+    }
+    
+    // Step 3: Look for file renames by comparing name similarity
     let original_files: Vec<_> = original_paths.iter()
         .filter(|(path, &is_dir)| !is_dir && !processed_original.contains(*path))
         .collect();
@@ -303,13 +373,17 @@ fn generate_operations(
                 .unwrap_or_default();
             
             // Check if files are in the same or similar directory
-            if parent_path == modified_parent || processed_original.contains(&parent_path) {
-                let similarity = name_similarity(&original_name, &modified_name);
-                
-                if similarity > 0.5 && similarity > best_similarity {
-                    best_similarity = similarity;
-                    best_match = Some(modified_path);
-                }
+            // Consider files in all directories, but with higher similarity requirement
+            // for files in different directories
+            let parent_match = parent_path == modified_parent || 
+                              processed_original.contains(&parent_path);
+            
+            let min_threshold = if parent_match { 0.3 } else { 0.6 };
+            let similarity = name_similarity(&original_name, &modified_name);
+            
+            if similarity > min_threshold && similarity > best_similarity {
+                best_similarity = similarity;
+                best_match = Some(modified_path);
             }
         }
         
@@ -325,7 +399,7 @@ fn generate_operations(
         }
     }
     
-    // Step 3: Add creation operations for new directories
+    // Step 4: Add creation operations for new directories
     for (path, &is_dir) in modified_paths {
         if !processed_modified.contains(path) && is_dir && !original_paths.contains_key(path) {
             operations.push(FileOperation::CreateDir { 
@@ -335,7 +409,7 @@ fn generate_operations(
         }
     }
     
-    // Step 4: Add creation operations for new files
+    // Step 5: Add creation operations for new files
     for (path, &is_dir) in modified_paths {
         if !processed_modified.contains(path) && !is_dir && !original_paths.contains_key(path) {
             // This is a new file - but it might be created as part of a parent directory creation
@@ -356,7 +430,7 @@ fn generate_operations(
         }
     }
     
-    // Step 5: Add deletion operations
+    // Step 6: Add deletion operations
     for (path, &is_dir) in original_paths {
         if !processed_original.contains(path) {
             operations.push(FileOperation::Delete { 
@@ -386,7 +460,7 @@ fn generate_operations(
 }
 
 // Helper function to get all children of a directory
-fn get_children(paths: &HashMap<String, bool>, dir_path: &str) -> HashMap<String, bool> {
+pub fn get_children(paths: &HashMap<String, bool>, dir_path: &str) -> HashMap<String, bool> {
     let mut children = HashMap::new();
     let prefix = if dir_path.ends_with('/') { dir_path } else { &format!("{}/", dir_path) };
     
@@ -400,7 +474,7 @@ fn get_children(paths: &HashMap<String, bool>, dir_path: &str) -> HashMap<String
 }
 
 // Helper function to check if two directories are similar based on their children
-fn is_similar_directory(dir1: &HashMap<String, bool>, dir2: &HashMap<String, bool>, threshold: f64) -> bool {
+pub fn is_similar_directory(dir1: &HashMap<String, bool>, dir2: &HashMap<String, bool>, threshold: f64) -> bool {
     if dir1.is_empty() && dir2.is_empty() {
         return true;
     }
@@ -428,7 +502,7 @@ fn is_similar_directory(dir1: &HashMap<String, bool>, dir2: &HashMap<String, boo
 }
 
 // Helper function to calculate string similarity
-fn name_similarity(name1: &str, name2: &str) -> f64 {
+pub fn name_similarity(name1: &str, name2: &str) -> f64 {
     if name1 == name2 {
         return 1.0;
     }

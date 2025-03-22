@@ -43,12 +43,16 @@ function App() {
 
   const handleOpenDirectory = async () => {
     try {
+      console.log("Browse button clicked");
+      
       // Open directory dialog
       const selected = await open({
         directory: true,
         multiple: false,
         title: "Select Directory"
       });
+
+      console.log("Selected directory:", selected);
 
       if (selected) {
         setDirectoryPath(selected as string);
@@ -74,10 +78,16 @@ function App() {
         <button type="button" onClick={handleOpenDirectory} disabled={isLoading}>
           Browse
         </button>
-        <button type="button" onClick={() => loadDirectory()} disabled={isLoading || !directoryPath}>
+        <button type="button" onClick={() => {
+          console.log("Load Directory button clicked", directoryPath);
+          loadDirectory();
+        }} disabled={isLoading || !directoryPath}>
           {isLoading ? "Loading..." : "Load Directory"}
         </button>
-        <button type="button" onClick={() => setShowSettings(true)} disabled={isLoading || !directoryPath}>
+        <button type="button" onClick={() => {
+          console.log("Settings button clicked");
+          setShowSettings(true);
+        }} disabled={isLoading || !directoryPath}>
           Settings
         </button>
         {backups.length > 0 && (

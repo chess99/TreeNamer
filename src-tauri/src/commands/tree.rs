@@ -33,23 +33,31 @@ struct TreeNode {
 
 #[command]
 pub fn parse_directory(path: &str, options: Option<DirectoryOptions>) -> Result<String, String> {
+    println!("parse_directory called with path: {}", path);
+    
     let options = options.unwrap_or_default();
     
     let path = Path::new(path);
     if !path.exists() {
+        println!("Error: Path does not exist: {}", path.display());
         return Err(format!("Path does not exist: {}", path.display()));
     }
     
     if !path.is_dir() {
+        println!("Error: Path is not a directory: {}", path.display());
         return Err(format!("Path is not a directory: {}", path.display()));
     }
     
     // Create regex for exclusion pattern
     let exclude_regex = match Regex::new(&options.exclude_pattern) {
         Ok(regex) => regex,
-        Err(e) => return Err(format!("Invalid exclude pattern: {}", e)),
+        Err(e) => {
+            println!("Error: Invalid exclude pattern: {}", e);
+            return Err(format!("Invalid exclude pattern: {}", e));
+        }
     };
     
+    println!("Building tree structure...");
     // Build the tree structure
     let tree = build_tree(path, &exclude_regex, options.max_depth, options.follow_symlinks, options.show_hidden, 0)?;
     
@@ -62,6 +70,7 @@ pub fn parse_directory(path: &str, options: Option<DirectoryOptions>) -> Result<
     result.push_str(&format!("{}/\n", root_name));
     format_tree(&tree.children, &mut result, "", true);
     
+    println!("Tree built successfully with {} lines", result.lines().count());
     Ok(result)
 }
 
