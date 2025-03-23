@@ -101,4 +101,23 @@ Use Vitest for frontend testing:
 
 {{ARCHITECTURE_UPDATE}}
 {{BEST_PRACTICES}}
+
+## Unit Testing Essentials
+
+- **All code changes MUST be accompanied by comprehensive unit tests**
+- **All unit tests MUST pass before committing changes**
+- Test every function against normal cases, edge cases, and error cases
+- When fixing bugs, first write failing tests that reproduce the issue
+- Test coverage should focus on critical business logic and error handling paths
+- Run the full test suite with `pnpm test` before submitting changes
+
+## Debugging and Issue Resolution
+
+- **Never use workarounds to fix failing tests - always find and fix the root cause**
+- Investigate test failures thoroughly to understand the underlying issue
+- Document complex bug fixes with clear explanations of the root cause
+- Use debugging tools and logging to trace issues rather than making assumptions
+- When fixing bugs, ensure the solution addresses the cause, not just the symptoms
+- If a test is flaky, fix the test itself rather than modifying the code to work around it
+
 {{TECH_DEBT}}

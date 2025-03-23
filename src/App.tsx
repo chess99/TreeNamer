@@ -6,7 +6,7 @@ import DiffViewer from './components/DiffViewer/DiffViewer';
 import MonacoEditor from './components/Editor/MonacoEditor';
 import TreeValidator from './components/FileTree/TreeValidator';
 import { TreeNode } from './types/TreeNode';
-import { formatTreeToText, parseTextToTree, validateRootNameChange } from './utils/treeUtils';
+import { checkDuplicatesAndMerges, formatTreeToText, parseTextToTree, validateRootNameChange } from './utils/treeUtils';
 
 function App() {
   // Core state
@@ -131,6 +131,59 @@ function App() {
       // Parse the edited text back to a tree structure
       const parsedTree = parseTextToTree(editedTreeText, treeJsonRef.current);
       
+      if (!parsedTree) {
+        throw new Error('Failed to parse tree structure');
+      }
+      
+      // Check for duplicate files and folder merges
+      const duplicateCheck = checkDuplicatesAndMerges(parsedTree);
+      
+      // If there are duplicate files, show error and abort
+      if (!duplicateCheck.valid) {
+        const errorMessages = duplicateCheck.fileErrors.map(err => {
+          // Get the filenames (last part of path)
+          const filenames = err.duplicates.map(d => d.split('/').pop() || '');
+          
+          // Count occurrences of each filename
+          const filenameCount = new Map<string, number>();
+          for (const name of filenames) {
+            filenameCount.set(name, (filenameCount.get(name) || 0) + 1);
+          }
+          
+          // Format the message - if all filenames are the same, show filename (count)
+          // Otherwise, show the list of filenames as before
+          if (filenameCount.size === 1) {
+            const filename = Array.from(filenameCount.keys())[0];
+            const count = filenameCount.get(filename) || 0;
+            return `Directory "${err.path}" has ${count} duplicate files with name: ${filename}`;
+          } else {
+            return `Directory "${err.path}" has duplicate files: ${filenames.join(', ')}`;
+          }
+        }).join('\n');
+        
+        showNotification('error', `Cannot apply changes: Duplicate files detected.\n${errorMessages}`);
+        setIsLoading(false);
+        return;
+      }
+      
+      // If there are folder merges, show confirmation dialog
+      if (duplicateCheck.folderMerges.length > 0) {
+        const folderMergeMessages = duplicateCheck.folderMerges.map(merge => 
+          `Directory "${merge.path}" has folders that will be merged: ${merge.folders.map(f => f.split('/').pop()).join(', ')}`
+        ).join('\n');
+        
+        // Use Tauri's dialog API which returns a Promise
+        const confirmed = await confirm(
+          `The following folders will be merged:\n${folderMergeMessages}\n\nDo you want to continue?`,
+          { title: "Confirm Folder Merges", kind: "warning" }
+        );
+        
+        if (!confirmed) {
+          setIsLoading(false);
+          return;
+        }
+      }
+      
       // Call the backend to apply the changes
       await invoke('apply_operations', {
         dirPath: directoryPath,
@@ -235,10 +288,17 @@ function App() {
     }
   };
 
-  // Helper to show notifications
+  // Show notification message
   const showNotification = (type: string, message: string) => {
-    setNotification({ type, message });
-    setTimeout(() => setNotification(null), type === 'error' ? 5000 : 3000);
+    setNotification({ 
+      type, 
+      message 
+    });
+    
+    // Clear notification after 6 seconds or longer for errors
+    setTimeout(() => {
+      setNotification(null);
+    }, type === 'error' ? 10000 : 6000);
   };
 
   // Handle tree text changes
@@ -377,7 +437,11 @@ function App() {
               {/* Notification */}
               {notification && (
                 <div className={`notification ${notification.type}`}>
-                  {notification.message}
+                  {notification.message.split('\n').map((line, i) => (
+                    <p key={i} style={{ margin: i === 0 ? '0 0 8px 0' : '4px 0' }}>
+                      {line}
+                    </p>
+                  ))}
                 </div>
               )}
               

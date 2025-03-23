@@ -585,4 +585,146 @@ export const addNestedDirectoryTest = () => {
   // This function will be called when the module is loaded
   // but its purpose is to define the new test case
   return true;
-} 
+}
+
+/**
+ * Checks for duplicate files and folder merging issues in a tree.
+ * This function detects if applying the tree changes would result in:
+ * 1. Multiple files with the same name in the same directory (error)
+ * 2. Multiple folders with the same name that would be merged (warning)
+ * 3. Potential file duplicates after folder merges (error)
+ * 
+ * @param treeNode The tree structure to check
+ * @returns Object containing validation results with errors and warnings
+ */
+export const checkDuplicatesAndMerges = (
+  treeNode: TreeNode
+): { 
+  valid: boolean; 
+  fileErrors: { path: string; duplicates: string[] }[]; 
+  folderMerges: { path: string; folders: string[] }[] 
+} => {
+  // Initialize results
+  const fileErrors: { path: string; duplicates: string[] }[] = [];
+  const folderMerges: { path: string; folders: string[] }[] = [];
+  
+  // Maps to track folder contents by path
+  const folderContentsMap = new Map<string, Map<string, { isDir: boolean, paths: string[] }>>();
+  
+  // Build a complete map of the tree structure
+  const buildFolderMap = (node: TreeNode, parentPath: string) => {
+    const currentPath = parentPath ? `${parentPath}/${node.name}` : node.name;
+    
+    // Initialize folder contents map for this path if it doesn't exist
+    if (!folderContentsMap.has(currentPath)) {
+      folderContentsMap.set(currentPath, new Map());
+    }
+    
+    // Process all children
+    for (const child of node.children) {
+      const childPath = `${currentPath}/${child.name}`;
+      
+      // Add to the current folder's contents
+      const folderContents = folderContentsMap.get(currentPath)!;
+      const existing = folderContents.get(child.name) || { isDir: child.is_dir, paths: [] };
+      existing.paths.push(childPath);
+      folderContents.set(child.name, existing);
+      
+      // Recursively process children if this is a directory
+      if (child.is_dir) {
+        buildFolderMap(child, currentPath);
+      }
+    }
+  };
+  
+  // First build the complete folder map
+  buildFolderMap(treeNode, "");
+  
+  // Function to check for direct duplicates in each folder
+  const checkFolderForDuplicates = () => {
+    for (const [folderPath, contents] of folderContentsMap.entries()) {
+      // Check for file duplicates
+      for (const [name, info] of contents.entries()) {
+        if (!info.isDir && info.paths.length > 1) {
+          fileErrors.push({
+            path: folderPath,
+            duplicates: info.paths
+          });
+        } else if (info.isDir && info.paths.length > 1) {
+          folderMerges.push({
+            path: folderPath,
+            folders: info.paths
+          });
+          
+          // For folder merges, check if there would be file conflicts after merging
+          checkMergeConflicts(name, info.paths);
+        }
+      }
+    }
+  };
+  
+  // Check if merging folders would result in duplicate files
+  const checkMergeConflicts = (folderName: string, folderPaths: string[]) => {
+    if (folderPaths.length <= 1) return;
+    
+    // Collect all files from all folders that would be merged
+    const filesByName = new Map<string, string[]>();
+    
+    // Check each folder's contents
+    for (const folderPath of folderPaths) {
+      const folderContents = folderContentsMap.get(folderPath);
+      if (!folderContents) continue;
+      
+      // Check all files in this folder
+      for (const [name, info] of folderContents.entries()) {
+        if (!info.isDir) {
+          // Track which folder this file is from by using source path:originator
+          const originator = folderPath;
+          const paths = filesByName.get(name) || [];
+          
+          // Add source information to each path to track where it comes from
+          info.paths.forEach(path => {
+            paths.push(`${path}:${originator}`);
+          });
+          
+          filesByName.set(name, paths);
+        }
+      }
+    }
+    
+    // Check for conflicts - files with the same name from different folders
+    for (const [fileName, paths] of filesByName.entries()) {
+      // Create a map from originating folder to paths to detect real duplicates
+      const uniqueSourceFolders = new Set<string>();
+      
+      // Extract originator from path:originator format
+      paths.forEach(pathWithSource => {
+        const [, source] = pathWithSource.split(":");
+        uniqueSourceFolders.add(source);
+      });
+      
+      // Only if we have the same filename from multiple sources, it's a real conflict
+      if (uniqueSourceFolders.size > 1) {
+        // There would be a file conflict after merging
+        const parentPath = folderPaths[0].split('/').slice(0, -1).join('/');
+        
+        // Extract just the file paths without the source information
+        const cleanPaths = paths.map(p => p.split(":")[0]);
+        
+        fileErrors.push({
+          path: `${parentPath} (after merge)`,
+          duplicates: cleanPaths
+        });
+      }
+    }
+  };
+  
+  // Check for duplicates
+  checkFolderForDuplicates();
+  
+  return {
+    valid: fileErrors.length === 0,
+    fileErrors,
+    folderMerges
+  };
+}; 
