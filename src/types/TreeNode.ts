@@ -3,4 +3,6 @@ export interface TreeNode {
   name: string;
   is_dir: boolean;
   children: TreeNode[];
+  oldPath?: string;
+  newPath?: string;
 } 

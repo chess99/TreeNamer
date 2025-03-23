@@ -21,6 +21,10 @@ pub struct TreeNode {
     name: String,
     is_dir: bool,
     children: Vec<TreeNode>,
+    #[serde(rename = "oldPath")]
+    old_path: Option<String>,
+    #[serde(rename = "newPath")]
+    new_path: Option<String>,
 }
 
 // 将TreeNode转换为HashMap<id -> (path, is_dir)>
@@ -135,89 +139,67 @@ pub fn generate_operations_from_json(
         println!("  ID: {}, Path: {}, IsDir: {}", id, path, is_dir);
     }
     
-    // 只生成需要重命名的操作
+    // 生成需要重命名的操作
     let mut operations = Vec::new();
     
-    // Check for renamed files by comparing paths between trees with matching IDs
-    println!("Checking for renamed files where IDs match...");
-    for (id, (mod_path, _)) in &modified_id_paths {
-        // 如果原始树中存在相同的ID
-        if let Some((orig_path, _)) = original_id_paths.get(id) {
-            // 检查路径是否发生变化
-            if orig_path != mod_path {
-                println!("Found rename for ID {}: {} -> {}", id, orig_path, mod_path);
-                
-                // 创建重命名操作
-                operations.push(FileOperation::Rename {
-                    from: base_path.join(orig_path).to_string_lossy().to_string(),
-                    to: base_path.join(mod_path).to_string_lossy().to_string(),
-                });
-            }
-        } else {
-            // ID不匹配，尝试通过位置/名称推断
-            println!("Warning: ID {} in modified tree not found in original tree.", id);
+    // 递归函数，遍历整个树来查找有oldPath但没有newPath的节点
+    fn collect_rename_operations(
+        node: &TreeNode, 
+        base_path: &Path, 
+        operations: &mut Vec<FileOperation>
+    ) {
+        // 检查当前节点是否有oldPath属性，表示这是一个重命名操作
+        if let Some(old_path) = &node.old_path {
+            // 如果有oldPath，则使用该值作为源路径
+            let from_path = base_path.join(old_path).to_string_lossy().to_string();
+            
+            // 构建当前节点的新路径
+            let new_path = if let Some(ref new_path) = node.new_path {
+                // 如果显式提供了newPath，则使用它
+                new_path.clone()
+            } else {
+                // 否则根据当前位置构建路径
+                node.name.clone()
+            };
+            
+            // 创建重命名操作
+            println!("Found rename: {} -> {}", old_path, new_path);
+            operations.push(FileOperation::Rename {
+                from: from_path,
+                to: base_path.join(new_path).to_string_lossy().to_string(),
+            });
+        }
+        
+        // 递归处理所有子节点
+        for child in &node.children {
+            collect_rename_operations(child, base_path, operations);
         }
     }
     
-    // 如果没有找到任何操作，尝试按树结构位置推断重命名
+    // 从修改后的树开始收集重命名操作
+    collect_rename_operations(&modified_node, base_path, &mut operations);
+    
+    // 如果没有找到任何操作，检查所有节点ID是否都匹配
     if operations.is_empty() {
-        println!("No operations found with ID matching. Using position-based matching strategy...");
+        println!("No explicit rename operations found with oldPath/newPath. Checking IDs...");
         
-        // 解析为树结构以进行位置比较
-        let original_tree: TreeNode = serde_json::from_str(original_tree).unwrap();
-        let modified_tree: TreeNode = serde_json::from_str(modified_tree).unwrap();
-        
-        // 逐一遍历所有节点，假设树结构不变，只有节点名称可能改变
-        let mut original_paths = Vec::new();
-        let mut modified_paths = Vec::new();
-        
-        // 递归收集树中的所有路径
-        fn collect_paths(node: &TreeNode, parent_path: &str, paths: &mut Vec<(String, String)>) {
-            let current_path = if parent_path.is_empty() {
-                node.name.clone()
-            } else {
-                format!("{}/{}", parent_path, node.name)
-            };
-            
-            paths.push((node.id.clone(), current_path.clone()));
-            
-            for child in &node.children {
-                collect_paths(child, &current_path, paths);
-            }
-        }
-        
-        collect_paths(&original_tree, "", &mut original_paths);
-        collect_paths(&modified_tree, "", &mut modified_paths);
-        
-        println!("Original paths count: {}", original_paths.len());
-        println!("Modified paths count: {}", modified_paths.len());
-        
-        // 只在调试模式打印详细路径
-        #[cfg(debug_assertions)]
-        {
-            println!("Original paths: {:?}", original_paths);
-            println!("Modified paths: {:?}", modified_paths);
-        }
-        
-        // 假设节点顺序不变，对应位置上的节点可能只改了名称
-        if original_paths.len() == modified_paths.len() {
-            for i in 0..original_paths.len() {
-                let (_, orig_path) = &original_paths[i];
-                let (_, mod_path) = &modified_paths[i];
-                
-                // 如果路径不同但位置相同，认为是重命名
+        // 检查每个ID是否在两棵树中路径不同，这表示重命名
+        for (id, (mod_path, _)) in &modified_id_paths {
+            // 查找原始树中相同ID的节点
+            if let Some((orig_path, _)) = original_id_paths.get(id) {
+                // 如果路径变了，就是重命名操作
                 if orig_path != mod_path {
-                    println!("Found potential rename at position {}: {} -> {}", i, orig_path, mod_path);
+                    println!("Found rename based on ID {}: {} -> {}", id, orig_path, mod_path);
                     
                     operations.push(FileOperation::Rename {
                         from: base_path.join(orig_path).to_string_lossy().to_string(),
                         to: base_path.join(mod_path).to_string_lossy().to_string(),
                     });
                 }
+            } else {
+                // ID在修改后的树中存在，但在原始树中不存在
+                println!("Warning: ID {} in modified tree not found in original tree.", id);
             }
-        } else {
-            println!("Tree structure changed. Cannot safely determine renames. Original length: {}, Modified length: {}", 
-                    original_paths.len(), modified_paths.len());
         }
     }
     

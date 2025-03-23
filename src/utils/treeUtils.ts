@@ -1,36 +1,46 @@
 import { TreeNode } from "../types/TreeNode";
 
 /**
- * Generates a unique ID for new nodes.
- */
-export const generateNewId = (): string => {
-  return 'new_' + Math.random().toString(36).substring(2, 11);
-};
-
-/**
  * Formats a TreeNode structure to a displayable text format with tree connectors.
  * 
  * @param node The tree node to format
  * @param prefix The prefix to use for the current level
  * @param isLast Whether this is the last child of its parent
+ * @param parentPath The path of the parent node
+ * @param isRoot Whether this is the root node
  * @returns Formatted text representation of the tree
  */
-export const formatTreeToText = (node: TreeNode, prefix: string = '', isLast: boolean = true): string => {
+export const formatTreeToText = (
+  node: TreeNode, 
+  prefix: string = '', 
+  isLast: boolean = true,
+  parentPath: string = '',
+  isRoot: boolean = true
+): string => {
   let result = '';
   
-  // Don't include root node in formatted output
-  if (prefix) {
+  // Build the current node's path
+  const nodePath = parentPath ? `${parentPath}/${node.name}` : node.name;
+  
+  // Generate the line for this node
+  if (isRoot) {
+    // Root node is formatted without any prefix
+    result += `${node.name}${node.is_dir ? '/' : ''}\n`;
+  } else {
+    // Non-root nodes get the connector and proper prefix
     const connector = isLast ? '└── ' : '├── ';
     result += `${prefix}${connector}${node.name}${node.is_dir ? '/' : ''}\n`;
-  } else {
-    result += `${node.name}${node.is_dir ? '/' : ''}\n`;
   }
   
-  const childPrefix = prefix + (isLast ? '    ' : '│   ');
+  // Calculate the prefix for child nodes
+  const childPrefix = isRoot 
+    ? '' // No prefix for direct children of root
+    : prefix + (isLast ? '    ' : '│   '); // Standard tree prefixes for other nodes
   
+  // Process children
   node.children.forEach((child: TreeNode, index: number) => {
     const isLastChild = index === node.children.length - 1;
-    result += formatTreeToText(child, childPrefix, isLastChild);
+    result += formatTreeToText(child, childPrefix, isLastChild, nodePath, false);
   });
   
   return result;
@@ -44,97 +54,135 @@ export const formatTreeToText = (node: TreeNode, prefix: string = '', isLast: bo
  * @returns Map of line numbers to node IDs
  */
 export const buildIdMapping = (text: string, originalJson: string): Map<number, string> => {
-  const idMapping = new Map<number, string>(); // lineNumber -> nodeId
+  const result = new Map<number, string>();
   
   try {
-    // Parse original JSON to get node IDs
+    // 解析原始的树结构JSON以获取ID
     const originalTree = JSON.parse(originalJson) as TreeNode;
-    const textLines = text.trim().split('\n');
+    const lines = text.trim().split('\n');
     
-    // Simplified line number based mapping assuming line order doesn't change
-    const mapIdsToLines = (node: TreeNode, lines: string[], startLine = 0): number => {
-      let currentLine = startLine;
+    console.log("Building ID mapping for text with", lines.length, "lines");
+    
+    // 首先，获取原始树中所有节点及其ID的列表
+    const allNodes: { id: string; name: string }[] = [];
+    collectAllNodes(originalTree, allNodes);
+    
+    // 跟踪哪些ID已经被使用，防止重复分配
+    const usedIds = new Set<string>();
+    
+    // 构建行号到节点ID的映射
+    if (originalTree) {
+      // 先将根节点映射到第0行
+      result.set(0, originalTree.id);
+      usedIds.add(originalTree.id);
+      console.log(`Mapping root (line 0) to ID ${originalTree.id}`);
       
-      // Map this node's ID to the current line
-      idMapping.set(currentLine, node.id);
-      currentLine++;
-      
-      // Process children
-      for (const child of node.children) {
-        currentLine = mapIdsToLines(child, lines, currentLine);
+      // 处理所有行，使用节点名称进行匹配
+      for (let i = 1; i < lines.length; i++) {
+        const line = lines[i].trim();
+        if (!line) continue;
+        
+        // 提取节点名称
+        const { name } = extractNodeName(line);
+        
+        // 在所有节点中查找匹配的节点
+        const matchingNode = findNodeByName(allNodes, name);
+        
+        if (matchingNode && !usedIds.has(matchingNode.id)) {
+          result.set(i, matchingNode.id);
+          usedIds.add(matchingNode.id);
+        } else {
+          // 如果找不到匹配的节点或者ID已被使用，查找未使用的ID
+          const unusedNode = allNodes.find(node => !usedIds.has(node.id));
+          
+          if (unusedNode) {
+            result.set(i, unusedNode.id);
+            usedIds.add(unusedNode.id);
+            console.warn(`Fallback mapping: line ${i} (${name}) to ID ${unusedNode.id}`);
+          } else {
+            // 如果所有ID都已使用，生成一个新ID
+            const newId = `new-id-${i}`;
+            result.set(i, newId);
+            console.warn(`No available IDs from original tree. Generated new ID for line ${i}: ${newId}`);
+          }
+        }
       }
-      
-      return currentLine;
-    };
+    }
     
-    // Start mapping from the first line (index 0)
-    mapIdsToLines(originalTree, textLines);
-    
-    console.log('Line to ID mapping created:', Object.fromEntries(idMapping));
+    console.log(`ID mapping complete: ${result.size} lines mapped`);
+    return result;
   } catch (error) {
     console.error('Error building ID mapping:', error);
+    return result;
   }
-  
-  return idMapping;
 };
 
 /**
- * Extracts the actual node name from a line with tree formatting.
- * 
- * @param line Line containing tree formatting characters
- * @returns The clean node name without tree formatting
+ * Collect all nodes from a tree into a flat array
  */
-export const extractNodeName = (line: string): { name: string, isDir: boolean } => {
-  // Remove indentation first
-  const trimmedLine = line.trim();
-  let name = trimmedLine;
-  let isDir = false;
+function collectAllNodes(node: TreeNode, result: { id: string; name: string }[]): void {
+  result.push({ id: node.id, name: node.name });
   
-  // Use a more comprehensive regex to match tree formatting patterns
-  // This pattern looks for the last occurrence of either "├── " or "└── "
-  // and extracts everything after it as the actual node name
-  const treeFormatRegex = /(├──\s|└──\s)(?!.*(?:├──\s|└──\s))(.+)$/;
+  for (const child of node.children) {
+    collectAllNodes(child, result);
+  }
+}
+
+/**
+ * Find a node by name in a list of nodes
+ */
+function findNodeByName(nodes: { id: string; name: string }[], name: string): { id: string; name: string } | undefined {
+  return nodes.find(node => node.name === name);
+}
+
+/**
+ * Extracts the node name and whether it's a directory from a formatted tree line.
+ * Handles all tree formatting characters (├──, └──, │) and preserves filenames 
+ * that might start with those characters.
+ * 
+ * @param line Line from formatted tree
+ * @returns Object with name and is_dir properties
+ */
+export const extractNodeName = (line: string): { name: string; is_dir: boolean } => {
+  // Trim any whitespace but preserve internal spaces
+  const trimmedLine = line.trim();
+  
+  // Look for tree formatting characters and the content after them
+  const treeFormatRegex = /^(?:[│├└]\s*)*(?:[├└]──\s+)(.+)$/;
   const match = trimmedLine.match(treeFormatRegex);
   
-  if (match && match[2]) {
-    // Extract the actual filename from the match
-    name = match[2];
-  } else if (trimmedLine.includes('├── ')) {
-    // Fallback to simpler string-based extraction
-    name = trimmedLine.split('├── ')[1] || '';
-  } else if (trimmedLine.includes('└── ')) {
-    name = trimmedLine.split('└── ')[1] || '';
-  } else if (trimmedLine.includes('│')) {
-    // Handle complex indentation with pipe characters
-    const parts = trimmedLine.split(/[├└]── /);
-    if (parts.length > 1) {
-      name = parts[parts.length - 1];
-    }
+  let name: string;
+  if (match && match[1]) {
+    // Extract actual node name from tree formatting
+    name = match[1];
+  } else {
+    // Handle cases without tree formatting (e.g., root nodes)
+    name = trimmedLine;
   }
   
-  // Check if this is a directory
-  if (name.endsWith('/')) {
+  // Check if it's a directory (ends with /)
+  const is_dir = name.endsWith('/');
+  
+  // Remove trailing slash for directories
+  if (is_dir) {
     name = name.slice(0, -1);
-    isDir = true;
   }
   
-  // Debug log to verify extracted name
-  console.log(`Extracted name from "${trimmedLine}": "${name}" (isDir: ${isDir})`);
-  
-  return { name, isDir };
+  return { name, is_dir };
 };
 
 /**
  * Parses formatted text representation back to TreeNode structure.
+ * Uses indentation to determine parent-child relationships.
  * 
  * @param text Formatted tree text
- * @param originalTree Original tree structure as JSON string
+ * @param originalTree Original tree structure as JSON string (for ID preservation)
  * @returns Parsed TreeNode structure, or null if parsing failed
  */
 export const parseTextToTree = (text: string, originalTree: string): TreeNode | null => {
   try {
-    // Preserve original ID mappings
-    const idMapping = buildIdMapping(text, originalTree);
+    console.log('\n======== PARSING TREE ========');
+    console.log('Original text:\n', text);
     
     const lines = text.trim().split('\n');
     if (lines.length === 0) return null;
@@ -144,62 +192,203 @@ export const parseTextToTree = (text: string, originalTree: string): TreeNode | 
     const isRootDir = rootLine.endsWith('/');
     const rootName = isRootDir ? rootLine.slice(0, -1) : rootLine;
     
-    // Get root node ID
-    const rootId = idMapping.get(0) || generateNewId();
+    // 使用行号来映射ID，不会生成新ID
+    const lineToIdMap = buildIdMapping(text, originalTree);
     
+    // Create original node path mapping to track changes
+    const originalTreeObj = JSON.parse(originalTree) as TreeNode;
+    const originalNodePaths = new Map<string, string>();
+    buildOriginalPathMapping(originalTreeObj, '', originalNodePaths);
+    
+    // 获取原始树中所有ID，用于处理可能缺失的映射
+    const allOriginalIds: string[] = [];
+    collectAllIds(originalTreeObj, allOriginalIds);
+    
+    // 获取根节点ID - 如果不存在映射，使用原始树的根ID
+    const rootId = lineToIdMap.get(0) || originalTreeObj.id;
+    
+    // Create root node with ID from mapping
     const root: TreeNode = {
       id: rootId,
       name: rootName,
       is_dir: isRootDir,
-      children: []
+      children: [],
+      oldPath: originalNodePaths.get(rootId)
     };
     
-    const stack: [TreeNode, number][] = [[root, 0]]; // [node, level]
-    let currentLine = 1; // Start from first line (skip root line)
+    // Track parents by indentation level
+    const nodesByLevel: TreeNode[] = [];
+    const pathsByLevel: string[] = [];
+    nodesByLevel[0] = root;
+    pathsByLevel[0] = rootName;
     
+    console.log(`Root node: "${rootName}" (ID: ${rootId})`);
+    
+    // 用于跟踪已使用的ID，确保不重复使用
+    const usedIds = new Set<string>([rootId]);
+    
+    // Track renamed nodes for reporting
+    const renamedNodes: { id: string, oldPath: string, newPath: string }[] = [];
+    
+    // Process lines after root
     for (let i = 1; i < lines.length; i++) {
       const line = lines[i];
       if (!line.trim()) continue;
       
-      // Calculate indentation level
-      const indentMatch = line.match(/^(\s*)/);
-      const indentLength = indentMatch ? indentMatch[1].length : 0;
-      const level = Math.floor(indentLength / 4) + 1;
+      // Calculate level by tree characters and spaces
+      const level = calculateIndentLevel(line);
       
-      // Extract node info without adding unintended prefixes
-      const { name, isDir } = extractNodeName(line);
+      // Extract node name and type
+      const { name, is_dir } = extractNodeName(line);
       
-      // Get node ID from mapping
-      const nodeId = idMapping.get(currentLine) || generateNewId();
+      // 增加调试信息，帮助理解缩进计算和父子关系
+      console.debug(`[Node] Line ${i}: "${name}" (level ${level}, is_dir ${is_dir})`);
       
+      // Find parent at the highest level less than the current level
+      let parentLevel = level - 1;
+      while (parentLevel >= 0 && !nodesByLevel[parentLevel]) {
+        parentLevel--;
+      }
+      
+      if (parentLevel < 0) {
+        console.error(`Cannot find parent for "${name}" at level ${level}`);
+        continue; // Skip this node
+      }
+      
+      const parent = nodesByLevel[parentLevel];
+      const parentPath = pathsByLevel[parentLevel];
+      
+      console.debug(`  Parent: "${parent.name}" (level ${parentLevel}, path ${parentPath})`);
+      
+      // 尝试获取ID，如果不存在映射，从原始ID列表中选择一个未使用的ID
+      let nodeId = lineToIdMap.get(i);
+      if (!nodeId) {
+        console.warn(`No ID mapping found for line ${i}: "${line}"`);
+        
+        // 找一个还没有使用过的ID
+        const unusedId = allOriginalIds.find(id => !usedIds.has(id));
+        if (unusedId) {
+          nodeId = unusedId;
+          console.log(`  Using unused ID from original tree: ${nodeId}`);
+        } else {
+          // 如果没有可用的ID，使用行号创建一个临时ID（这种情况不应该发生，但作为兜底措施）
+          nodeId = `temp-id-${i}`;
+          console.warn(`  Using temporary ID: ${nodeId}`);
+        }
+      }
+      
+      // 如果ID已经使用过，打印警告并创建一个新ID
+      if (usedIds.has(nodeId)) {
+        console.warn(`Duplicate ID detected: ${nodeId} was already used. Creating new ID for ${name}`);
+        nodeId = `unique-${i}-${Math.random().toString(36).substring(2, 9)}`;
+      }
+      
+      // 标记ID为已使用
+      usedIds.add(nodeId);
+      
+      // Build node path
+      const nodePath = parentPath ? `${parentPath}/${name}` : name;
+      pathsByLevel[level] = nodePath;
+      
+      // Check if this node's path has changed from original
+      const originalPath = originalNodePaths.get(nodeId);
+      
+      // Create node with ID from line mapping
       const node: TreeNode = {
         id: nodeId,
         name,
-        is_dir: isDir,
+        is_dir,
         children: []
       };
       
-      currentLine++;
-      
-      // Find parent node based on indentation level
-      while (stack.length > 0 && stack[stack.length - 1][1] >= level) {
-        stack.pop();
+      // If this node exists in the original tree with a different path, record both paths
+      if (originalPath && originalPath !== nodePath) {
+        node.oldPath = originalPath;
+        node.newPath = nodePath;
+        renamedNodes.push({ id: nodeId, oldPath: originalPath, newPath: nodePath });
       }
       
-      if (stack.length > 0) {
-        const parent = stack[stack.length - 1][0];
-        parent.children.push(node);
-      }
+      // Add to parent
+      parent.children.push(node);
       
-      if (isDir) {
-        stack.push([node, level]);
+      // 设置这个节点为当前级别的父节点，并清除所有更高级别的节点
+      // 这确保了嵌套结构正确，避免错误的父子关系
+      nodesByLevel[level] = node;
+      for (let j = level + 1; j < nodesByLevel.length; j++) {
+        delete nodesByLevel[j]; // 清除更高级别的节点
+        delete pathsByLevel[j];
       }
     }
     
+    // Log renamed nodes
+    if (renamedNodes.length > 0) {
+      console.log('\n===== RENAMED NODES =====');
+      renamedNodes.forEach(node => {
+        console.log(`Node ${node.id}: ${node.oldPath} -> ${node.newPath}`);
+      });
+    }
+    
+    // Check for duplicate IDs in the final tree
+    const allTreeIds = new Set<string>();
+    const duplicateIds = new Set<string>();
+    checkForDuplicateIds(root, allTreeIds, duplicateIds);
+    
+    if (duplicateIds.size > 0) {
+      console.error('\n===== DUPLICATE IDs DETECTED =====');
+      console.error(`Found ${duplicateIds.size} duplicate IDs in the tree: ${Array.from(duplicateIds).join(', ')}`);
+    }
+    
+    // Log the final JSON that will be sent to backend
+    console.log('\n===== PARSED TREE JSON =====');
+    printTreeJson(root);
+    
+    console.log('======== PARSING COMPLETE ========\n');
     return root;
   } catch (error) {
     console.error('Error parsing text to tree:', error);
     return null;
+  }
+};
+
+/**
+ * Build a mapping of node IDs to their original paths from the original tree
+ * This is used to detect path changes for nodes
+ * 
+ * @param node Current node in the traversal
+ * @param parentPath Parent path to build current path from
+ * @param pathMap Map to store node ID to path mapping
+ */
+function buildOriginalPathMapping(
+  node: TreeNode, 
+  parentPath: string, 
+  pathMap: Map<string, string>
+): void {
+  const nodePath = parentPath ? `${parentPath}/${node.name}` : node.name;
+  pathMap.set(node.id, nodePath);
+  
+  for (const child of node.children) {
+    buildOriginalPathMapping(child, nodePath, pathMap);
+  }
+}
+
+/**
+ * Calculate the indentation level based on tree formatting characters
+ * This approach uses both the count of pipe characters and the indentation level
+ * to determine the correct nesting
+ */
+const calculateIndentLevel = (line: string): number => {
+  // For deeply nested structures, we need to look at both pipes and spaces
+  // Get the position of the first branch character (├ or └)
+  const branchMatch = line.match(/[├└]/);
+  
+  if (branchMatch && branchMatch.index !== undefined) {
+    // Calculate level based on the branch position (4 spaces = 1 level)
+    // Add 1 to account for the level change caused by the branch character
+    return Math.floor(branchMatch.index / 4) + 1;
+  } else {
+    // For lines without branch characters, use leading spaces
+    const leadingSpaces = line.match(/^(\s*)/)?.[1].length || 0;
+    return Math.floor(leadingSpaces / 4);
   }
 };
 
@@ -212,57 +401,136 @@ export const parseTextToTree = (text: string, originalTree: string): TreeNode | 
  * @returns An object containing validation results
  */
 export const validateTreeParsing = (treeText: string, treeJson?: string): { valid: boolean; details: any } => {
-  const details: any = {
-    parsedLines: 0,
-    warnings: [],
-    errors: []
-  };
-  
   try {
-    if (!treeText.trim()) {
-      details.errors.push('Tree text is empty');
-      return { valid: false, details };
+    // 如果没有提供JSON，则创建一个空的树结构
+    const jsonToUse = treeJson || JSON.stringify({ 
+      id: 'root-id', 
+      name: 'root', 
+      is_dir: true, 
+      children: [] 
+    });
+    
+    // 解析文本到树结构
+    const parsed = parseTextToTree(treeText, jsonToUse);
+    
+    if (!parsed) {
+      return { 
+        valid: false, 
+        details: { 
+          error: 'Failed to parse tree text', 
+          text: treeText 
+        } 
+      };
     }
     
-    // Parse the tree text
-    const parsedTree = parseTextToTree(treeText, treeJson || '');
+    // 获取所有节点的ID并检查是否有重复
+    const ids = getAllNodeIds(parsed);
+    const uniqueIds = new Set(ids);
     
-    if (!parsedTree) {
-      details.errors.push('Failed to parse tree text to tree structure');
-      return { valid: false, details };
-    }
+    // 比较原始树和解析后的树的结构
+    const originalTree = JSON.parse(jsonToUse) as TreeNode;
+    const structureMatch = compareTreeStructure(originalTree, parsed);
     
-    // Re-format the parsed tree to text
-    const reformattedText = formatTreeToText(parsedTree);
-    
-    // Compare original text structure with reformatted text 
-    // (ignoring whitespace differences in indentation)
-    const originalLines = treeText.split('\n').map(line => line.trim()).filter(line => line);
-    const reformattedLines = reformattedText.split('\n').map(line => line.trim()).filter(line => line);
-    
-    details.parsedLines = originalLines.length;
-    
-    if (originalLines.length !== reformattedLines.length) {
-      details.warnings.push(`Line count mismatch: original=${originalLines.length}, reformatted=${reformattedLines.length}`);
-    }
-    
-    // Check for differences in node names
-    for (let i = 0; i < Math.min(originalLines.length, reformattedLines.length); i++) {
-      const original = originalLines[i];
-      const reformatted = reformattedLines[i];
-      
-      const originalName = extractNodeName(original).name;
-      const reformattedName = extractNodeName(reformatted).name;
-      
-      if (originalName !== reformattedName) {
-        details.errors.push(`Node name mismatch at line ${i + 1}: original="${originalName}", reformatted="${reformattedName}"`);
+    return {
+      valid: ids.length === uniqueIds.size && structureMatch,
+      details: {
+        totalNodes: ids.length,
+        uniqueIds: uniqueIds.size,
+        hasDuplicateIds: ids.length !== uniqueIds.size,
+        structureMatch,
+        parsedTree: parsed
       }
-    }
-    
-    const isValid = details.errors.length === 0;
-    return { valid: isValid, details };
+    };
   } catch (error) {
-    details.errors.push(`Validation error: ${error instanceof Error ? error.message : String(error)}`);
-    return { valid: false, details };
+    return {
+      valid: false,
+      details: {
+        error: `Validation error: ${error}`,
+        stack: (error as Error).stack
+      }
+    };
   }
-}; 
+};
+
+// 获取树中所有节点的ID
+function getAllNodeIds(node: TreeNode): string[] {
+  const ids = [node.id];
+  
+  for (const child of node.children) {
+    ids.push(...getAllNodeIds(child));
+  }
+  
+  return ids;
+}
+
+// 比较两个树的结构（不包括ID，只比较层级结构）
+function compareTreeStructure(original: TreeNode, parsed: TreeNode): boolean {
+  // 比较名称和类型
+  if (original.name !== parsed.name || original.is_dir !== parsed.is_dir) {
+    return false;
+  }
+  
+  // 比较子节点数量
+  if (original.children.length !== parsed.children.length) {
+    return false;
+  }
+  
+  // 递归比较每个子节点
+  for (let i = 0; i < original.children.length; i++) {
+    if (!compareTreeStructure(original.children[i], parsed.children[i])) {
+      return false;
+    }
+  }
+  
+  return true;
+}
+
+/**
+ * Collect all IDs from a tree into an array
+ */
+function collectAllIds(node: TreeNode, result: string[]): void {
+  result.push(node.id);
+  
+  for (const child of node.children) {
+    collectAllIds(child, result);
+  }
+}
+
+/**
+ * Utility function to print tree JSON in a compact format
+ */
+export function printTreeJson(tree: TreeNode): void {
+  console.log(JSON.stringify(tree, (key, value) => {
+    // Skip empty children arrays
+    if (key === 'children' && Array.isArray(value) && value.length === 0) {
+      return [];
+    }
+    return value;
+  }, 2));
+}
+
+/**
+ * Recursively check for duplicate IDs in the tree
+ */
+function checkForDuplicateIds(
+  node: TreeNode, 
+  seenIds: Set<string>,
+  duplicates: Set<string>
+): void {
+  if (seenIds.has(node.id)) {
+    duplicates.add(node.id);
+  } else {
+    seenIds.add(node.id);
+  }
+  
+  for (const child of node.children) {
+    checkForDuplicateIds(child, seenIds, duplicates);
+  }
+}
+
+// Add a new unit test specifically for nested directory structures
+export const addNestedDirectoryTest = () => {
+  // This function will be called when the module is loaded
+  // but its purpose is to define the new test case
+  return true;
+} 

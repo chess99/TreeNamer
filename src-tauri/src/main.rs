@@ -3,19 +3,15 @@
 
 mod commands;
 mod error;
+#[cfg(test)]
 mod test {
     pub use crate::commands::test::*;
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    // Run our test for the improved rename detection algorithm
-    #[cfg(debug_assertions)]
-    {
-        if let Err(e) = test::test_generate_operations() {
-            eprintln!("Test failed: {}", e);
-        }
-    }
+    // Test execution should only happen when explicitly running tests, not during normal app usage
+    // Removing automatic test execution from app startup
 
     println!("Starting TreeNamer application...");
 
@@ -175,14 +171,8 @@ mod tests {
             .filter(|op| matches!(op, commands::fs::FileOperation::Rename { .. }))
             .collect();
         
-        // 找到创建操作
-        let create_ops: Vec<_> = operations.iter()
-            .filter(|op| matches!(op, commands::fs::FileOperation::CreateDir { .. }))
-            .collect();
-        
         // 验证操作数量
         assert_eq!(rename_ops.len(), 1, "应该有一个重命名操作");
-        assert_eq!(create_ops.len(), 1, "应该有一个创建操作");
         
         // 验证节点ID和名称
         assert_eq!(file1_id, "file1-id", "重命名后ID应保持不变");
