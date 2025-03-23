@@ -5,7 +5,7 @@ import './App.css';
 import MonacoEditor from './components/Editor/MonacoEditor';
 import TreeValidator from './components/FileTree/TreeValidator';
 import { TreeNode } from './types/TreeNode';
-import { formatTreeToText, parseTextToTree } from './utils/treeUtils';
+import { formatTreeToText, parseTextToTree, validateRootNameChange } from './utils/treeUtils';
 
 function App() {
   // Core state
@@ -24,6 +24,20 @@ function App() {
   
   // Reference to original text for true comparison
   const originalTextRef = useRef<string>('');
+
+  // Timer reference for debouncing validation
+  const validationTimerRef = useRef<number | null>(null);
+  
+  // Flag to disable validation during programmatic changes
+  const skipValidationRef = useRef<boolean>(false);
+  
+  // Reference to always have the latest treeJson value
+  const treeJsonRef = useRef<string>('');
+  
+  // Update ref when treeJson changes
+  useEffect(() => {
+    treeJsonRef.current = treeJson;
+  }, [treeJson]);
 
   // Handle window resize events
   useEffect(() => {
@@ -46,6 +60,9 @@ function App() {
   useEffect(() => {
     if (treeJson) {
       try {
+        // Set flag to skip validation for programmatic changes
+        skipValidationRef.current = true;
+        
         const parsedTree = JSON.parse(treeJson) as TreeNode;
         const formattedText = formatTreeToText(parsedTree);
         
@@ -55,6 +72,11 @@ function App() {
         
         // Reset edited state
         setIsEdited(false);
+        
+        // Allow validation again after a short delay to ensure UI updates first
+        setTimeout(() => {
+          skipValidationRef.current = false;
+        }, 100);
       } catch (error) {
         console.error('Error formatting tree JSON:', error);
         setEditedTreeText('Error formatting tree data');
@@ -100,19 +122,103 @@ function App() {
     }
   };
 
+  // Handle applying changes
+  const handleApplyChanges = async () => {
+    if (!isEdited) {
+      setNotification({ type: 'info', message: '没有修改需要应用' });
+      setTimeout(() => setNotification(null), 3000);
+      return;
+    }
+
+    try {
+      setIsLoading(true);
+      setError(null);
+      
+      console.log('Applying changes to directory:', directoryPath);
+      
+      // Parse edited text back to tree structure to preserve IDs
+      const parsedTree = parseTextToTree(editedTreeText, treeJsonRef.current);
+      
+      if (!parsedTree) {
+        throw new Error('Failed to parse edited tree');
+      }
+      
+      // Convert to JSON for backend
+      const modifiedJson = JSON.stringify(parsedTree);
+      
+      console.log('Current treeJson before apply:', treeJsonRef.current.substring(0, 50) + '...');
+      
+      // Apply changes via backend
+      await invoke('apply_operations', {
+        dirPath: directoryPath,
+        originalTree: treeJsonRef.current,
+        modifiedTree: modifiedJson
+      });
+      
+      // Reload directory to get fresh tree
+      await loadDirectory(directoryPath);
+      
+      // Show success notification
+      setNotification({ type: 'success', message: '修改成功应用' });
+      setTimeout(() => setNotification(null), 3000);
+    } catch (err) {
+      console.error('Error applying changes:', err);
+      setNotification({ type: 'error', message: `应用修改出错: ${err}` });
+      setTimeout(() => setNotification(null), 5000);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+  
+  // Validate root name and show warning if changed
+  const validateRootName = (text: string) => {
+    if (!treeJsonRef.current || skipValidationRef.current) return;
+    
+    try {
+      console.log('Validating root name with current treeJson:', treeJsonRef.current.substring(0, 50) + '...');
+      const validation = validateRootNameChange(text, treeJsonRef.current);
+      
+      if (validation.changed) {
+        // Show warning about root name change
+        setNotification({
+          type: 'warning',
+          message: '根节点的名称不能修改，将会被自动重置。'
+        });
+        
+        // Reset root name in the editor
+        const lines = text.trim().split('\n');
+        lines[0] = validation.originalName;
+        const correctedText = lines.join('\n');
+        
+        // Update the editor with corrected text
+        setEditedTreeText(correctedText);
+        
+        // Clear notification after a delay
+        setTimeout(() => setNotification(null), 4000);
+      }
+    } catch (error) {
+      console.error('Error validating root name:', error);
+    }
+  };
+
   // Centralized function to load directory
   const loadDirectory = async (path: string) => {
     try {
       setIsLoading(true);
       setError(null);
       
+      // Set flag to skip validation for programmatic changes
+      skipValidationRef.current = true;
+      
       console.log('Loading directory:', path);
+      console.log('Current treeJson before loading:', treeJson ? treeJson.substring(0, 50) + '...' : 'empty');
       console.log('Calling parse_directory with params:', { dirPath: path });
       
       try {
         // Get tree directly from backend
         const result = await invoke<string>('parse_directory', { dirPath: path });
         console.log('Parse directory successful, received data length:', result?.length || 0);
+        console.log('New treeJson data:', result.substring(0, 50) + '...');
         
         // Set the tree JSON (will trigger useEffect to format to text)
         setTreeJson(result);
@@ -143,53 +249,18 @@ function App() {
     const normalizedOriginal = originalTextRef.current.trim().replace(/\s+/g, ' ');
     
     // Compare with original reference to detect actual changes
-    // This ensures if user edits text and then reverts to original, isEdited will be false
     setIsEdited(normalizedNew !== normalizedOriginal);
-  };
-
-  // Handle applying changes
-  const handleApplyChanges = async () => {
-    if (!isEdited) {
-      setNotification({ type: 'info', message: '没有修改需要应用' });
-      setTimeout(() => setNotification(null), 3000);
-      return;
-    }
-
-    try {
-      setIsLoading(true);
-      setError(null);
-      
-      console.log('Applying changes to directory:', directoryPath);
-      
-      // Parse edited text back to tree structure to preserve IDs
-      const parsedTree = parseTextToTree(editedTreeText, treeJson);
-      
-      if (!parsedTree) {
-        throw new Error('Failed to parse edited tree');
+    
+    // Only validate if not triggered by programmatic changes
+    if (!skipValidationRef.current) {
+      // Debounce root name validation
+      if (validationTimerRef.current) {
+        window.clearTimeout(validationTimerRef.current);
       }
       
-      // Convert to JSON for backend
-      const modifiedJson = JSON.stringify(parsedTree);
-      
-      // Apply changes via backend
-      await invoke('apply_operations', {
-        dirPath: directoryPath,
-        originalTree: treeJson,
-        modifiedTree: modifiedJson
-      });
-      
-      // Reload directory to get fresh tree
-      await loadDirectory(directoryPath);
-      
-      // Show success notification
-      setNotification({ type: 'success', message: '修改成功应用' });
-      setTimeout(() => setNotification(null), 3000);
-    } catch (err) {
-      console.error('Error applying changes:', err);
-      setNotification({ type: 'error', message: `应用修改出错: ${err}` });
-      setTimeout(() => setNotification(null), 5000);
-    } finally {
-      setIsLoading(false);
+      validationTimerRef.current = window.setTimeout(() => {
+        validateRootName(newValue);
+      }, 500);
     }
   };
 

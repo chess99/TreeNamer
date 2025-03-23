@@ -172,6 +172,45 @@ export const extractNodeName = (line: string): { name: string; is_dir: boolean }
 };
 
 /**
+ * Checks if the root name in edited text is different from the original tree.
+ * 
+ * @param text Edited tree text
+ * @param originalTree Original tree structure as JSON string
+ * @returns Object with validation result and original root name
+ */
+export const validateRootNameChange = (
+  text: string, 
+  originalTree: string
+): { changed: boolean; originalName: string; newName: string } => {
+  try {
+    // Get original root name
+    const originalTreeObj = JSON.parse(originalTree) as TreeNode;
+    const originalRootName = originalTreeObj.name + (originalTreeObj.is_dir ? '/' : '');
+    
+    // Get edited root name
+    const lines = text.trim().split('\n');
+    if (lines.length === 0) {
+      return { 
+        changed: false, 
+        originalName: originalRootName, 
+        newName: originalRootName 
+      };
+    }
+    
+    const editedRootName = lines[0].trim();
+    
+    return {
+      changed: originalRootName !== editedRootName,
+      originalName: originalRootName,
+      newName: editedRootName
+    };
+  } catch (error) {
+    console.error('Error validating root name change:', error);
+    return { changed: false, originalName: '', newName: '' };
+  }
+};
+
+/**
  * Parses formatted text representation back to TreeNode structure.
  * Uses indentation to determine parent-child relationships.
  * 
@@ -191,16 +230,25 @@ export const parseTextToTree = (
     const lines = text.trim().split('\n');
     if (lines.length === 0) return null;
     
+    // Get original root info
+    const originalTreeObj = JSON.parse(originalTree) as TreeNode;
+    
     // Extract root name from first line
-    const rootLine = lines[0].trim();
-    const isRootDir = rootLine.endsWith('/');
-    const rootName = isRootDir ? rootLine.slice(0, -1) : rootLine;
+    let rootLine = lines[0].trim();
+    const isRootDir = rootLine.endsWith('/') || originalTreeObj.is_dir;
+    
+    // Check if root name changed and maintain original if it did
+    if (originalTreeObj.name !== rootLine.replace(/\/$/, '')) {
+      console.warn('Root name was modified. Using original root name for consistency.');
+      rootLine = originalTreeObj.name + (isRootDir ? '/' : '');
+    }
+    
+    const rootName = isRootDir ? rootLine.replace(/\/$/, '') : rootLine;
     
     // 使用行号来映射ID，不会生成新ID
     const lineToIdMap = buildIdMapping(text, originalTree);
     
     // Create original node path mapping to track changes
-    const originalTreeObj = JSON.parse(originalTree) as TreeNode;
     const originalNodePaths = new Map<string, string>();
     buildOriginalPathMapping(originalTreeObj, '', originalNodePaths);
     

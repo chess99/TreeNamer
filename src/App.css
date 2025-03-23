@@ -249,6 +249,11 @@ button {
     color: #777;
     border-color: #444;
   }
+
+  .notification.warning {
+    background-color: #ff9900;
+    border-left: 4px solid #e67700;
+  }
 }
 
 /* Make sure all components fill available space */
@@ -503,6 +508,11 @@ main {
 .notification.error {
   background-color: #e53935;
   border-left: 4px solid #c62828;
+}
+
+.notification.warning {
+  background-color: #ff9800;
+  border-left: 4px solid #ef6c00;
 }
 
 .notification.info {
