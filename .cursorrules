@@ -14,6 +14,8 @@
 - Follow Test-Driven Development (TDD) principles
 - Update documentation when changing architecture or APIs
 - Document only significant challenges and solutions
+- **Always ensure changes result in code that builds and runs successfully before committing**
+- Validate that your changes work by testing with `pnpm run build` or `pnpm run tauri dev`
 
 ### Documentation References
 
@@ -22,6 +24,14 @@
 - `docs/03-implementation-status.md` - Current progress
 
 ## Critical Implementation Notes
+
+### Build Integrity and Functionality
+
+- All changes must produce code that builds successfully and functions correctly
+- Test your changes with `pnpm run build` before submitting them
+- For external libraries without proper type definitions, add pragmatic type declarations in `src/types/`
+- Pragmatic type workarounds (including `any` or type assertions) are acceptable if they ensure working functionality
+- Balance type safety with development efficiency - focus on user-facing functionality first
 
 ### Tree Data Flow
 

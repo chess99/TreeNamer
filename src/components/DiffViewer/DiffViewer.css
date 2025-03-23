@@ -1,0 +1,214 @@
+.diff-viewer {
+  width: 100%;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background-color: #fff;
+  border-radius: 0;
+  overflow: hidden;
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 10;
+}
+
+.diff-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  background-color: #f5f5f5;
+  border-bottom: 1px solid #e0e0e0;
+  flex-shrink: 0;
+}
+
+.diff-header h2 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 500;
+  color: #333;
+}
+
+.diff-stats {
+  display: flex;
+  gap: 12px;
+}
+
+.stat {
+  font-size: 14px;
+  font-weight: 500;
+  padding: 4px 8px;
+  border-radius: 4px;
+}
+
+.stat.added {
+  background-color: rgba(67, 160, 71, 0.1);
+  color: #43a047;
+}
+
+.stat.removed {
+  background-color: rgba(229, 57, 53, 0.1);
+  color: #e53935;
+}
+
+.diff-content {
+  flex: 1;
+  overflow: hidden;
+  background-color: #fafafa;
+  min-height: 0;
+}
+
+.diff-text {
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-size: 14px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  padding: 0 16px;
+  margin: 0;
+}
+
+.diff-insert {
+  background-color: rgba(67, 160, 71, 0.1);
+  color: #2e7d32;
+}
+
+.diff-delete {
+  background-color: rgba(229, 57, 53, 0.1);
+  color: #c62828;
+  text-decoration: line-through;
+}
+
+.diff-equal {
+  color: #333;
+}
+
+/* Footer styled to exactly match the main app's action buttons */
+.diff-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 10px 16px;
+  background-color: #f5f5f5;
+  border-top: 1px solid #e0e0e0;
+  flex-shrink: 0;
+  margin-top: 10px;
+  margin-bottom: 5px;
+  transition: all 0.3s ease-in-out;
+}
+
+/* Button styles exactly matching the main interface */
+.diff-footer .button {
+  padding: 10px 20px;
+  background-color: #4a90e2;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-weight: 500;
+  cursor: pointer;
+  font-size: 14px;
+  transition: background-color 0.2s;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+.diff-footer .button:hover {
+  background-color: #3a80d2;
+}
+
+.diff-footer .button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  background-color: #a0a0a0;
+}
+
+.diff-footer .button.secondary {
+  background-color: #f5f5f5;
+  color: #333;
+  border: 1px solid #ddd;
+}
+
+.diff-footer .button.secondary:hover {
+  background-color: #e5e5e5;
+}
+
+.diff-footer .button.secondary:disabled {
+  opacity: 0.5;
+  color: #777;
+  background-color: #f5f5f5;
+}
+
+/* Dark mode support */
+@media (prefers-color-scheme: dark) {
+  .diff-viewer {
+    background-color: #1e1e1e;
+    border: none;
+  }
+
+  .diff-header {
+    background-color: #2c2c2c;
+    border-bottom-color: #444;
+  }
+
+  .diff-header h2 {
+    color: #e0e0e0;
+  }
+
+  .diff-content {
+    background-color: #1e1e1e;
+  }
+
+  .diff-text {
+    color: #e0e0e0;
+  }
+
+  .diff-equal {
+    color: #e0e0e0;
+  }
+
+  .diff-insert {
+    background-color: rgba(67, 160, 71, 0.2);
+    color: #81c784;
+  }
+
+  .diff-delete {
+    background-color: rgba(229, 57, 53, 0.2);
+    color: #e57373;
+  }
+
+  .diff-footer {
+    background-color: #2c2c2c;
+    border-top-color: #444;
+  }
+  
+  .diff-footer .button {
+    background-color: #4a90e2;
+    color: white;
+  }
+  
+  .diff-footer .button:hover {
+    background-color: #3a80d2;
+  }
+  
+  .diff-footer .button:disabled {
+    opacity: 0.5;
+    background-color: #a0a0a0;
+  }
+  
+  .diff-footer .button.secondary {
+    background-color: #2c2c2c;
+    color: #e0e0e0;
+    border-color: #444;
+  }
+  
+  .diff-footer .button.secondary:hover {
+    background-color: #333;
+    border-color: #555;
+  }
+  
+  .diff-footer .button.secondary:disabled {
+    background-color: #2c2c2c;
+    color: #777;
+    border-color: #444;
+  }
+} 

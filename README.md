@@ -28,19 +28,19 @@ TreeNamer 是一个目录树可视化和批量重命名工具，使用 Tauri + R
 ### 安装依赖
 
 ```bash
-npm install
+pnpm install
 ```
 
 ### 开发模式
 
 ```bash
-npm run tauri dev
+pnpm tauri dev
 ```
 
 ### 构建
 
 ```bash
-npm run tauri build
+pnpm tauri build
 ```
 
 ## 贡献

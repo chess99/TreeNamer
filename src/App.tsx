@@ -2,6 +2,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { confirm, open } from '@tauri-apps/plugin-dialog';
 import { useEffect, useRef, useState } from 'react';
 import './App.css';
+import DiffViewer from './components/DiffViewer/DiffViewer';
 import MonacoEditor from './components/Editor/MonacoEditor';
 import TreeValidator from './components/FileTree/TreeValidator';
 import { TreeNode } from './types/TreeNode';
@@ -21,6 +22,8 @@ function App() {
     width: window.innerWidth, 
     height: window.innerHeight 
   });
+  // Add state to control diff view visibility
+  const [showDiffView, setShowDiffView] = useState<boolean>(false);
   
   // Reference to original text for true comparison
   const originalTextRef = useRef<string>('');
@@ -39,7 +42,7 @@ function App() {
     treeJsonRef.current = treeJson;
   }, [treeJson]);
 
-  // Handle window resize events
+  // Update window size on resize
   useEffect(() => {
     const handleResize = () => {
       setWindowSize({
@@ -49,11 +52,7 @@ function App() {
     };
 
     window.addEventListener('resize', handleResize);
-    
-    // Clean up event listener on component unmount
-    return () => {
-      window.removeEventListener('resize', handleResize);
-    };
+    return () => window.removeEventListener('resize', handleResize);
   }, []);
 
   // Format JSON to text when treeJson changes
@@ -122,82 +121,78 @@ function App() {
     }
   };
 
-  // Handle applying changes
+  // Function to apply tree text changes
   const handleApplyChanges = async () => {
-    if (!isEdited) {
-      setNotification({ type: 'info', message: '没有修改需要应用' });
-      setTimeout(() => setNotification(null), 3000);
-      return;
-    }
-
+    if (!isEdited) return;
+    
     try {
       setIsLoading(true);
-      setError(null);
       
-      console.log('Applying changes to directory:', directoryPath);
-      
-      // Parse edited text back to tree structure to preserve IDs
+      // Parse the edited text back to a tree structure
       const parsedTree = parseTextToTree(editedTreeText, treeJsonRef.current);
       
-      if (!parsedTree) {
-        throw new Error('Failed to parse edited tree');
-      }
-      
-      // Convert to JSON for backend
-      const modifiedJson = JSON.stringify(parsedTree);
-      
-      console.log('Current treeJson before apply:', treeJsonRef.current.substring(0, 50) + '...');
-      
-      // Apply changes via backend
+      // Call the backend to apply the changes
       await invoke('apply_operations', {
         dirPath: directoryPath,
         originalTree: treeJsonRef.current,
-        modifiedTree: modifiedJson
+        modifiedTree: JSON.stringify(parsedTree)
       });
       
       // Reload directory to get fresh tree
       await loadDirectory(directoryPath);
       
+      // Close diff view if it's open
+      if (showDiffView) {
+        setShowDiffView(false);
+      }
+      
       // Show success notification
-      setNotification({ type: 'success', message: '修改成功应用' });
-      setTimeout(() => setNotification(null), 3000);
-    } catch (err) {
-      console.error('Error applying changes:', err);
-      setNotification({ type: 'error', message: `应用修改出错: ${err}` });
-      setTimeout(() => setNotification(null), 5000);
+      showNotification('success', '变更已成功应用');
+    } catch (error) {
+      console.error('Error applying changes:', error);
+      setError(`应用变更时出错: ${error}`);
+      showNotification('error', `应用变更时出错: ${error}`);
     } finally {
       setIsLoading(false);
     }
   };
   
-  // Validate root name and show warning if changed
+  // Validate root name in edited text
   const validateRootName = (text: string) => {
-    if (!treeJsonRef.current || skipValidationRef.current) return;
+    // Skip validation if flag is set
+    if (skipValidationRef.current) {
+      return;
+    }
     
+    // Skip if there's no tree loaded yet
+    if (!treeJsonRef.current) {
+      return;
+    }
+
     try {
-      console.log('Validating root name with current treeJson:', treeJsonRef.current.substring(0, 50) + '...');
-      const validation = validateRootNameChange(text, treeJsonRef.current);
+      const validationResult = validateRootNameChange(text, treeJsonRef.current);
       
-      if (validation.changed) {
-        // Show warning about root name change
-        setNotification({
-          type: 'warning',
-          message: '根节点的名称不能修改，将会被自动重置。'
-        });
+      if (validationResult.changed) {
+        // Set the skip flag to avoid re-triggering validation during the reset
+        skipValidationRef.current = true;
         
-        // Reset root name in the editor
-        const lines = text.trim().split('\n');
-        lines[0] = validation.originalName;
+        // Show warning message
+        showNotification('warning', `根目录名称不能被修改，已自动恢复为原始名称: ${validationResult.originalName}`);
+        
+        // Reset the root name in the editor by replacing just the first line
+        const lines = text.split('\n');
+        lines[0] = validationResult.originalName;
         const correctedText = lines.join('\n');
         
-        // Update the editor with corrected text
         setEditedTreeText(correctedText);
         
-        // Clear notification after a delay
-        setTimeout(() => setNotification(null), 4000);
+        // Clear the skip flag after a short delay
+        setTimeout(() => {
+          skipValidationRef.current = false;
+        }, 100);
       }
     } catch (error) {
-      console.error('Error validating root name:', error);
+      console.error('Error during root name validation:', error);
     }
   };
 
@@ -240,131 +235,164 @@ function App() {
     }
   };
 
-  // Handle user edits to tree text
-  const handleTreeTextChange = (newValue: string) => {
-    setEditedTreeText(newValue);
+  // Helper to show notifications
+  const showNotification = (type: string, message: string) => {
+    setNotification({ type, message });
+    setTimeout(() => setNotification(null), type === 'error' ? 5000 : 3000);
+  };
+
+  // Handle tree text changes
+  const handleTreeTextChange = (value: string) => {
+    setEditedTreeText(value);
     
-    // Normalize whitespace for both texts to avoid detecting insignificant whitespace changes
-    const normalizedNew = newValue.trim().replace(/\s+/g, ' ');
-    const normalizedOriginal = originalTextRef.current.trim().replace(/\s+/g, ' ');
-    
-    // Compare with original reference to detect actual changes
-    setIsEdited(normalizedNew !== normalizedOriginal);
-    
-    // Only validate if not triggered by programmatic changes
-    if (!skipValidationRef.current) {
-      // Debounce root name validation
-      if (validationTimerRef.current) {
-        window.clearTimeout(validationTimerRef.current);
-      }
-      
-      validationTimerRef.current = window.setTimeout(() => {
-        validateRootName(newValue);
-      }, 500);
+    // Skip validation for programmatic changes
+    if (skipValidationRef.current) {
+      return;
     }
+    
+    // Set isEdited based on comparison with original text
+    const hasChanged = value !== originalTextRef.current;
+    setIsEdited(hasChanged);
+    
+    // Debounce validation to avoid too many checks
+    if (validationTimerRef.current) {
+      clearTimeout(validationTimerRef.current);
+    }
+    
+    validationTimerRef.current = setTimeout(() => {
+      validateRootName(value);
+    }, 500) as unknown as number;
+  };
+
+  // Handle showing diff view
+  const handleShowDiff = () => {
+    // Make sure we don't validate while showing diff
+    skipValidationRef.current = true;
+    setShowDiffView(true);
+  };
+
+  // Handle closing diff view
+  const handleCloseDiff = () => {
+    // Re-enable validation when back to editing
+    setTimeout(() => {
+      skipValidationRef.current = false;
+    }, 100);
+    setShowDiffView(false);
   };
 
   return (
     <div className="app-container">
-      <main>
-        <div className="controls">
-          <button onClick={handleBrowse}>浏览...</button>
-          <input 
-            type="text" 
-            value={directoryPath} 
-            onChange={handleInputChange}
-            onKeyDown={handleInputKeyDown}
-            placeholder="输入目录路径或点击浏览选择目录"
-            className="directory-input"
-          />
-          <button 
-            onClick={async () => {
-              if (isEdited) {
-                // Use Tauri's dialog API which returns a Promise
-                const confirmed = await confirm(
-                  "您有未应用的修改。继续刷新将丢失这些修改。是否继续？",
-                  { title: "确认刷新", kind: "warning" }
-                );
-                
-                if (confirmed) {
+      {showDiffView ? (
+        /* Full-screen Diff Viewer */
+        <DiffViewer 
+          originalText={originalTextRef.current}
+          modifiedText={editedTreeText}
+          onClose={handleCloseDiff}
+          onApply={handleApplyChanges}
+        />
+      ) : (
+        /* Main Application UI */
+        <main>
+          <div className="controls">
+            <button onClick={handleBrowse}>浏览...</button>
+            <input 
+              type="text" 
+              value={directoryPath} 
+              onChange={handleInputChange}
+              onKeyDown={handleInputKeyDown}
+              placeholder="输入目录路径或点击浏览选择目录"
+              className="directory-input"
+            />
+            <button 
+              onClick={async () => {
+                if (isEdited) {
+                  // Use Tauri's dialog API which returns a Promise
+                  const confirmed = await confirm(
+                    "您有未应用的修改。继续刷新将丢失这些修改。是否继续？",
+                    { title: "确认刷新", kind: "warning" }
+                  );
+                  
+                  if (confirmed) {
+                    handleLoad();
+                  }
+                } else {
                   handleLoad();
                 }
-              } else {
-                handleLoad();
-              }
-            }} 
-            disabled={!directoryPath.trim() || isLoading}
-            className="refresh-button"
-            title="刷新"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/>
-            </svg>
-          </button>
-        </div>
-
-        {error && <div className="error-message">{error}</div>}
-
-        {isLoading && !treeJson && (
-          <div className="loading">
-            <div className="spinner"></div>
-            <p>加载中...</p>
+              }} 
+              disabled={!directoryPath.trim() || isLoading}
+              className="refresh-button"
+              title="刷新"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/>
+              </svg>
+            </button>
           </div>
-        )}
 
-        {treeJson && (
-          <div className="tree-operations-layout">
-            {/* Tree view editor */}
-            <div className="tree-view">
-              {isLoading && (
-                <div className="loading-overlay">
-                  <div className="spinner"></div>
+          {error && <div className="error-message">{error}</div>}
+
+          {isLoading && !treeJson && (
+            <div className="loading">
+              <div className="spinner"></div>
+              <p>加载中...</p>
+            </div>
+          )}
+
+          {treeJson && (
+            <div className="tree-operations-layout">
+              {/* Tree view editor */}
+              <div className="tree-view">
+                {isLoading && (
+                  <div className="loading-overlay">
+                    <div className="spinner"></div>
+                  </div>
+                )}
+                
+                <MonacoEditor 
+                  value={editedTreeText} 
+                  onChange={handleTreeTextChange} 
+                  height="100%"
+                  key={`editor-${windowSize.width}-${windowSize.height}`}
+                />
+              </div>
+
+              {/* Action buttons */}
+              <div className="action-buttons">
+                <button 
+                  className="button secondary" 
+                  onClick={handleShowDiff}
+                  disabled={isLoading || !isEdited}
+                >
+                  查看差异
+                </button>
+                <button 
+                  className="button" 
+                  onClick={handleApplyChanges}
+                  disabled={isLoading || !isEdited}
+                >
+                  应用修改
+                </button>
+              </div>
+
+              {/* Notification */}
+              {notification && (
+                <div className={`notification ${notification.type}`}>
+                  {notification.message}
                 </div>
               )}
-              <MonacoEditor 
-                value={editedTreeText} 
-                onChange={handleTreeTextChange} 
-                height="100%"
-                key={`editor-${windowSize.width}-${windowSize.height}`}
-              />
+              
+              {/* Add Tree Validator component in debug mode */}
+              {import.meta.env.DEV && <TreeValidator treeText={editedTreeText} treeJson={treeJson} />}
             </div>
+          )}
 
-            {/* Action buttons */}
-            <div className="action-buttons">
-              <button 
-                className="button secondary" 
-                onClick={() => alert("Diff view will be implemented here")}
-                disabled={isLoading || !isEdited}
-              >
-                查看差异
-              </button>
-              <button 
-                className="button" 
-                onClick={handleApplyChanges}
-                disabled={isLoading || !isEdited}
-              >
-                应用修改
-              </button>
+          {!treeJson && !isLoading && (
+            <div className="no-content">
+              <p>请选择一个目录来开始</p>
             </div>
-
-            {/* Notification */}
-            {notification && (
-              <div className={`notification ${notification.type}`}>
-                {notification.message}
-              </div>
-            )}
-            
-            {/* Add Tree Validator component in debug mode */}
-            {import.meta.env.DEV && <TreeValidator treeText={editedTreeText} treeJson={treeJson} />}
-          </div>
-        )}
-
-        {!treeJson && !isLoading && (
-          <div className="no-content">
-            <p>请选择一个目录来开始</p>
-          </div>
-        )}
-      </main>
+          )}
+        </main>
+      )}
     </div>
   );
 }

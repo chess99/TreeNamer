@@ -24,17 +24,17 @@ cd treenamer
 
 ```bash
 # 安装前端依赖
-npm install
+pnpm install
 
 # 安装 Tauri CLI
-npm install -g @tauri-apps/cli
+pnpm install -g @tauri-apps/cli
 ```
 
 ### 运行开发服务器
 
 ```bash
 # 启动开发服务器 (包括 Rust 后端)
-npm run tauri dev
+pnpm run tauri dev
 ```
 
 ## 项目结构
@@ -185,7 +185,7 @@ test('renders correctly', () => {
 运行测试：
 
 ```bash
-npm test
+pnpm test
 ```
 
 ## 文档贡献
