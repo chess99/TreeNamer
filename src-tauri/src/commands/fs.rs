@@ -454,4 +454,147 @@ pub fn is_protected_path(path: &str) -> bool {
     ];
     
     protected_paths.iter().any(|p| path.starts_with(p))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::commands::tree::TreeNode;
+
+    #[test]
+    fn test_protected_path_detection() {
+        // Test system paths that should be protected
+        #[cfg(target_os = "windows")]
+        {
+            assert!(is_protected_path("C:\\Windows"), "Windows system directory should be protected");
+            assert!(is_protected_path("C:\\Windows\\System32"), "System32 directory should be protected");
+            assert!(is_protected_path("C:\\Program Files"), "Program Files directory should be protected");
+        }
+
+        #[cfg(target_os = "macos")]
+        {
+            assert!(is_protected_path("/System"), "macOS System directory should be protected");
+            assert!(is_protected_path("/Library"), "macOS Library directory should be protected");
+            assert!(is_protected_path("/usr"), "usr directory should be protected");
+        }
+
+        #[cfg(target_os = "linux")]
+        {
+            assert!(is_protected_path("/etc"), "Linux etc directory should be protected");
+            assert!(is_protected_path("/usr"), "usr directory should be protected");
+            assert!(is_protected_path("/var"), "var directory should be protected");
+        }
+
+        // Test non-protected paths
+        #[cfg(target_os = "windows")]
+        {
+            assert!(!is_protected_path("D:\\Projects\\TreeNamer"), "User project directory should not be protected");
+            assert!(!is_protected_path("C:\\Users\\username\\Documents"), "User documents should not be protected");
+        }
+
+        #[cfg(any(target_os = "macos", target_os = "linux"))]
+        {
+            assert!(!is_protected_path("/home/user/documents"), "User home directory should not be protected");
+            assert!(!is_protected_path("/tmp"), "Temporary directory should not be protected");
+        }
+
+        // Test edge cases
+        assert!(!is_protected_path(""), "Empty path should not trigger protection");
+        assert!(!is_protected_path("relative/path"), "Relative paths should not be protected");
+    }
+
+    #[test]
+    fn test_operations_generation_with_ids() {
+        // 创建原始树
+        let mut original_tree = TreeNode {
+            id: "root-id".to_string(),
+            name: "root".to_string(),
+            is_dir: true,
+            children: Vec::new(),
+        };
+
+        let file1 = TreeNode {
+            id: "file1-id".to_string(),
+            name: "file1.txt".to_string(),
+            is_dir: false,
+            children: Vec::new(),
+        };
+
+        let dir1 = TreeNode {
+            id: "dir1-id".to_string(),
+            name: "dir1".to_string(),
+            is_dir: true,
+            children: Vec::new(),
+        };
+
+        original_tree.children.push(file1);
+        original_tree.children.push(dir1);
+
+        // 创建修改后的树 - 重命名file1.txt到file2.txt，并添加新文件
+        let mut modified_tree = TreeNode {
+            id: "root-id".to_string(),
+            name: "root".to_string(),
+            is_dir: true,
+            children: Vec::new(),
+        };
+
+        let file1_renamed = TreeNode {
+            id: "file1-id".to_string(), // 保持相同ID
+            name: "file2.txt".to_string(), // 新名称
+            is_dir: false,
+            children: Vec::new(),
+        };
+
+        // 保存值以供后续断言
+        let file1_id = file1_renamed.id.clone();
+        let file1_new_name = file1_renamed.name.clone();
+
+        let dir1 = TreeNode {
+            id: "dir1-id".to_string(),
+            name: "dir1".to_string(),
+            is_dir: true,
+            children: Vec::new(),
+        };
+
+        let new_file = TreeNode {
+            id: "new-file-id".to_string(),
+            name: "new_file.txt".to_string(),
+            is_dir: false,
+            children: Vec::new(),
+        };
+
+        modified_tree.children.push(file1_renamed);
+        modified_tree.children.push(dir1);
+        modified_tree.children.push(new_file);
+
+        // 生成操作（此处不实际应用，因为需要文件系统）
+        let test_path = std::env::temp_dir().to_string_lossy().to_string(); // 使用临时目录
+        let original_json = serde_json::to_string(&original_tree).unwrap();
+        let modified_json = serde_json::to_string(&modified_tree).unwrap();
+        
+        // 使用新的函数生成操作
+        let operations = generate_operations_from_json(
+            &test_path, 
+            &original_json, 
+            &modified_json
+        ).unwrap_or_else(|e| {
+            panic!("Failed to generate operations: {}", e);
+        });
+        
+        // 验证生成的操作
+        assert!(!operations.is_empty(), "应该生成至少一个操作");
+        
+        // 找到重命名操作
+        let rename_ops: Vec<_> = operations.iter()
+            .filter(|op| matches!(op, FileOperation::Rename { .. }))
+            .collect();
+        
+        // 验证操作数量
+        assert_eq!(rename_ops.len(), 1, "应该有一个重命名操作");
+        
+        // 验证节点ID和名称
+        assert_eq!(file1_id, "file1-id", "重命名后ID应保持不变");
+        assert_eq!(file1_new_name, "file2.txt", "名称应已更新");
+        assert_eq!(modified_tree.children.len(), 3, "修改后的树应有3个子节点");
+    }
 } 

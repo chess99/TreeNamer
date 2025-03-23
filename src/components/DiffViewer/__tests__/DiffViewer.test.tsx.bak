@@ -1,0 +1,133 @@
+import { fireEvent, render, screen } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import DiffViewer from '../DiffViewer';
+
+// Import test utilities
+import '@testing-library/jest-dom';
+
+// Create mock functions
+const mockCreateDiffEditor = vi.fn().mockReturnValue({
+  setModel: vi.fn(),
+  getLineChanges: vi.fn().mockReturnValue([
+    {
+      originalStartLineNumber: 1,
+      originalEndLineNumber: 2,
+      modifiedStartLineNumber: 1,
+      modifiedEndLineNumber: 3
+    }
+  ]),
+  dispose: vi.fn()
+});
+
+const mockCreateModel = vi.fn().mockImplementation((content) => ({
+  dispose: vi.fn(),
+  getValue: () => content
+}));
+
+// Mock monaco-editor
+vi.mock('monaco-editor', () => ({
+  editor: {
+    createDiffEditor: mockCreateDiffEditor,
+    createModel: mockCreateModel
+  }
+}));
+
+describe('DiffViewer Component', () => {
+  const originalText = 'Original\ntext\ncontent';
+  const modifiedText = 'Modified\ntext\ncontent\nwith extra line';
+  const onCloseMock = vi.fn();
+  const onApplyMock = vi.fn();
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('renders the component with proper heading and buttons', () => {
+    render(
+      <DiffViewer
+        originalText={originalText}
+        modifiedText={modifiedText}
+        onClose={onCloseMock}
+        onApply={onApplyMock}
+      />
+    );
+
+    // Check if the title is rendered
+    expect(screen.getByText(/文件修改对比/i)).toBeInTheDocument();
+    
+    // Check if buttons are rendered
+    expect(screen.getByRole('button', { name: /返回/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /应用修改/i })).toBeInTheDocument();
+  });
+
+  it('calls onClose when the back button is clicked', () => {
+    render(
+      <DiffViewer
+        originalText={originalText}
+        modifiedText={modifiedText}
+        onClose={onCloseMock}
+        onApply={onApplyMock}
+      />
+    );
+
+    // Click the back button
+    const backButton = screen.getByRole('button', { name: /返回/i });
+    fireEvent.click(backButton);
+
+    // Check if onClose was called
+    expect(onCloseMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('calls onApply when the apply button is clicked', () => {
+    render(
+      <DiffViewer
+        originalText={originalText}
+        modifiedText={modifiedText}
+        onClose={onCloseMock}
+        onApply={onApplyMock}
+      />
+    );
+
+    // Click the apply button
+    const applyButton = screen.getByRole('button', { name: /应用修改/i });
+    fireEvent.click(applyButton);
+
+    // Check if onApply was called
+    expect(onApplyMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('calls onClose when Escape key is pressed', () => {
+    render(
+      <DiffViewer
+        originalText={originalText}
+        modifiedText={modifiedText}
+        onClose={onCloseMock}
+        onApply={onApplyMock}
+      />
+    );
+
+    // Simulate Escape key press
+    fireEvent.keyDown(window, { key: 'Escape' });
+
+    // Check if onClose was called
+    expect(onCloseMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('initializes the Monaco diff editor with the provided text', () => {
+    render(
+      <DiffViewer
+        originalText={originalText}
+        modifiedText={modifiedText}
+        onClose={onCloseMock}
+        onApply={onApplyMock}
+      />
+    );
+    
+    // Check if diff editor was created
+    expect(mockCreateDiffEditor).toHaveBeenCalledTimes(1);
+    
+    // Check if models were created with the correct text
+    expect(mockCreateModel).toHaveBeenCalledWith(originalText, 'plaintext');
+    expect(mockCreateModel).toHaveBeenCalledWith(modifiedText, 'plaintext');
+  });
+}); 

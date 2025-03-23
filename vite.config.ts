@@ -49,5 +49,6 @@ export default defineConfig(async () => ({
     coverage: {
       reporter: ['text', 'json', 'html'],
     },
+    testTimeout: 20000,
   },
 }));

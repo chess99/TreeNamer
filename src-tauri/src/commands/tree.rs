@@ -220,4 +220,87 @@ fn format_tree(nodes: &[TreeNode], result: &mut String, prefix: &str, _is_last: 
             result.push_str(&format!("{}\n", node.name));
         }
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashSet;
+
+    #[test]
+    fn test_tree_node_id_generation() {
+        // 创建一个简单的树结构
+        let mut root = TreeNode {
+            id: uuid::Uuid::new_v4().to_string(),
+            name: "root".to_string(),
+            is_dir: true,
+            children: Vec::new(),
+        };
+
+        let child1 = TreeNode {
+            id: uuid::Uuid::new_v4().to_string(),
+            name: "child1".to_string(),
+            is_dir: false,
+            children: Vec::new(),
+        };
+
+        let child2 = TreeNode {
+            id: uuid::Uuid::new_v4().to_string(),
+            name: "child2".to_string(),
+            is_dir: true,
+            children: Vec::new(),
+        };
+
+        root.children.push(child1);
+        root.children.push(child2);
+
+        // 验证每个节点都有唯一的ID
+        let mut ids = HashSet::new();
+        ids.insert(root.id.clone());
+        
+        for child in &root.children {
+            // 确保没有重复的ID
+            assert!(!ids.contains(&child.id), "ID冲突: {}", child.id);
+            ids.insert(child.id.clone());
+        }
+
+        // 验证ID不为空
+        assert!(!root.id.is_empty(), "根节点ID不应为空");
+        for child in &root.children {
+            assert!(!child.id.is_empty(), "子节点ID不应为空: {}", child.name);
+        }
+    }
+
+    #[test]
+    fn test_error_handling_invalid_paths() {
+        // Test with non-existent path
+        let result = parse_directory("__this_path_definitely_doesnt_exist__".to_string(), None);
+        assert!(result.is_err(), "Parsing a non-existent directory should return an error");
+        let error_msg = result.unwrap_err();
+        assert!(
+            error_msg.contains("exist") || error_msg.contains("find") || error_msg.contains("found"),
+            "Error message should indicate the path doesn't exist: {}",
+            error_msg
+        );
+        
+        // Test with a file path instead of a directory path
+        // First create a temporary file
+        let temp_file = std::env::temp_dir().join("treenamer_test_file.txt");
+        if let Ok(file) = std::fs::File::create(&temp_file) {
+            drop(file); // Close the file
+            
+            // Now try to parse it as a directory
+            let result = parse_directory(temp_file.to_string_lossy().to_string(), None);
+            assert!(result.is_err(), "Parsing a file as a directory should return an error");
+            let error_msg = result.unwrap_err();
+            assert!(
+                error_msg.contains("directory") || error_msg.contains("folder") || error_msg.contains("NotADirectory"),
+                "Error message should indicate the path is not a directory: {}",
+                error_msg
+            );
+            
+            // Clean up
+            let _ = std::fs::remove_file(temp_file);
+        }
+    }
 } 
