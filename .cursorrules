@@ -11,378 +11,83 @@
 ### Core Principles
 
 - Fully understand code logic before making changes - review all related code files first
-- Follow Test-Driven Development (TDD):
-  - Write test cases before implementation
-  - Verify tests fail initially (red)
-  - Implement the feature until tests pass (green)
-  - Run tests after implementation to confirm they pass
-- When changing designs:
-  - Update technical documentation to reflect changes
-  - Update existing tests or add new tests
-  - Update API references if public interfaces change
-- Only document meaningful solutions to difficult problems in learning sections
-  - Include problems that took significant time to solve
-  - Document issues that others are likely to encounter again
-  - Skip simple or one-time problems
+- Follow Test-Driven Development (TDD) principles
+- Update documentation when changing architecture or APIs
+- Document only significant challenges and solutions
 
 ### Documentation References
 
-- See `docs/10-technical-solution-design.md` for detailed architecture
-- Check `docs/31-architecture-decision-records.md` for key decisions
-- Review `docs/03-implementation-status.md` for current progress
+- `docs/10-technical-solution-design.md` - Architecture overview
+- `docs/31-architecture-decision-records.md` - Key design decisions
+- `docs/03-implementation-status.md` - Current progress
 
-## Commit Guidelines
+## Critical Implementation Notes
 
-- Use conventional commit format
-- Test all UI interactions before committing
-- Update code and documentation synchronously
+### Tree Data Flow
 
-## Learning Sections
+1. Backend generates tree JSON with unique node IDs
+2. Frontend formats JSON to text display format
+3. User edits text representation
+4. Frontend parses text back to JSON, preserving original IDs
+5. Backend detects renames by comparing paths for same IDs
 
-### Problem Fixes
+### ID Preservation Pattern
 
-- **Tauri v2 Dialog Permission**: In Tauri v2, dialog permissions must be configured in `src-tauri/capabilities/default.json` with `"dialog:default"` instead of in `tauri.conf.json`
-- **Unicode Handling in Tree Parsing**: When parsing tree structures with Unicode characters like `├──`, use character-aware methods instead of byte indices. In `parse_tree_text` function, use methods like `chars().nth()` or proper Unicode-aware slicing instead of string indexing to avoid "byte index is not a char boundary" errors.
-- **Tauri Parameter Naming Convention**: Rust code typically uses `snake_case` for parameters, while JavaScript/TypeScript uses `camelCase`. When using Tauri commands, explicitly define parameter naming with attribute `#[allow(non_snake_case)]` before parameter names to use `camelCase` parameter names in the Rust code (like `dirPath` instead of `dir_path`). This ensures proper parameter matching between JavaScript and Rust. Example:
+Always preserve node IDs during tree parsing to correctly detect renames:
 
-  ```rust
-  #[command]
-  pub fn parse_directory(
-      #[allow(non_snake_case)] dirPath: String, 
-      options: Option<DirectoryOptions>
-  ) -> Result<String, String> {
-      // Now JavaScript can call this with { dirPath: path }
-  }
-  ```
+```typescript
+// Use ID mapping to track entity identity across edits
+const nodeId = idMapping.get(lineNumber) || generateNewId();
 
-- **ID Preservation for TreeNode Entity Tracking**: The ID system in TreeNamer preserves entity identities across tree modifications. Each node in the TreeNode structure has a unique ID that should remain constant even when renaming files. The frontend needs to maintain these IDs when parsing tree text back to JSON. IDs are used to track which files have been renamed - matching IDs with different paths indicates a rename operation. In the node parsing logic, always preserve original IDs from line-to-ID mapping instead of generating new ones. Example:
+// Create node with preserved ID
+const node = {
+  id: nodeId,  // Preserves entity identity for rename tracking
+  name: nodeName,
+  is_dir: isDirectory,
+  children: []
+};
+```
 
-  ```typescript
-  // Create mapping between line numbers and node IDs in original tree
-  const idMapping = new Map<number, string>(); // lineNumber -> nodeId
+### Critical Regex Patterns
+
+For tree text parsing, use proper regex to extract node names:
+
+```typescript
+// Extract filename from tree formatting characters
+const treeFormatRegex = /^(?:[│├└]\s*)*(?:[├└]──\s+)(.+)$/;
+const match = line.match(treeFormatRegex);
   
-  // When parsing text back to tree, use the original ID for each line
-  const nodeId = idMapping.get(lineNumber) || generateNewId();
-  
-  // Create node with preserved ID
-  const node = {
-    id: nodeId,  // Using original ID preserves entity identity
-    name: nodeName,
-    is_dir: isDirectory,
-    children: []
-  };
-  ```
+if (match && match[1]) {
+  // Extract the actual filename
+  name = match[1];
+}
+```
 
-- **Tree Formatting Characters in Filename Parsing**: When parsing tree text back to a tree structure, be careful to properly extract filenames without including tree formatting characters like `├──`, `└──`, or `│`. Use regular expressions to identify and remove these characters from the actual filename. Example:
+### Tauri Integration
 
-  ```typescript
-  // Regular expression to extract the actual filename from a line with tree formatting
-  const treeFormatMatch = text.match(/^(?:[│├└]\s*[─┬┴]\s*)+\s(.+)$/);
-  if (treeFormatMatch && treeFormatMatch[1]) {
-    // Extract just the filename portion
-    filename = treeFormatMatch[1];
-  }
-  ```
+For Tauri commands with camelCase parameters, use:
 
-- **Duplicate Path Handling in File Operations**: When building paths for file operations, be careful not to duplicate the base directory name in the paths. This can happen when the TreeNode structure includes the base directory name and then this is appended to the base path again. Always check and fix paths to avoid issues like `D:\__temp\__temp\file.txt` which should be just `D:\__temp\file.txt`. Example:
+```rust
+#[command]
+pub fn parse_directory(
+    #[allow(non_snake_case)] dirPath: String, 
+    options: Option<DirectoryOptions>
+) -> Result<String, String> {
+    // Now JavaScript can call this with { dirPath: path }
+}
+```
 
-  ```rust
-  // Check for and fix duplicate directory segments in paths
-  fn fix_duplicate_path(path: &str, base_name: &str) -> String {
-      // Find consecutive components with the same name as base_name
-      // and remove the duplication
-      // ...
-  }
-  ```
+### Testing Setup
 
-- **Frontend Testing for TreeNode Parsing**: Always write tests for the frontend tree parsing logic to ensure it correctly handles tree formatting characters and preserves node IDs. Create test cases for various scenarios including nested directories, special characters, and edge cases. Example test for DirectoryTree's parseTextToTree function:
+Use Vitest for frontend testing:
 
-  ```typescript
-  // Test case for parseTextToTree function
-  describe('parseTextToTree', () => {
-    it('should correctly parse tree text with formatting characters', () => {
-      // Create a sample tree text with formatting
-      const treeText = `__temp/
-  ├── folder1/
-  │   ├── file1.txt
-  │   └── file2.txt
-  └── folder2/
-      └── file3.txt`;
-      
-      // Create a mock ID mapping (usually from buildIdMapping)
-      const mockIdMapping = new Map([
-        [0, 'root-id'],
-        [1, 'folder1-id'],
-        [2, 'file1-id'],
-        [3, 'file2-id'],
-        [4, 'folder2-id'],
-        [5, 'file3-id']
-      ]);
-      
-      // Mock the buildIdMapping function
-      jest.spyOn(component, 'buildIdMapping').mockReturnValue(mockIdMapping);
-      
-      // Call the function
-      const result = component.parseTextToTree(treeText);
-      
-      // Verify the resulting tree structure
-      expect(result).not.toBeNull();
-      expect(result?.name).toBe('__temp');
-      expect(result?.children.length).toBe(2);
-      
-      // Verify the first folder and its contents
-      const folder1 = result?.children[0];
-      expect(folder1?.name).toBe('folder1');
-      expect(folder1?.is_dir).toBe(true);
-      expect(folder1?.id).toBe('folder1-id');
-      expect(folder1?.children.length).toBe(2);
-      
-      // Verify files have correct names without formatting characters
-      expect(folder1?.children[0].name).toBe('file1.txt');
-      expect(folder1?.children[1].name).toBe('file2.txt');
-    });
-  });
-
-- **Frontend Utility Extraction**: Always extract complex logic into separate utility functions that can be independently tested. Key benefits:
-  1. Makes code more maintainable by promoting separation of concerns
-  2. Enables thorough testing of logic without UI dependencies
-  3. Simplifies debugging of complex algorithms
-  4. Improves code reuse across components
-
-  Example directory structure:
-
-  ```
-  src/
-  ├── components/
-  │   └── FileTree/
-  │       └── DirectoryTree.tsx  # UI Component
-  ├── types/
-  │   └── TreeNode.ts  # Type definitions
-  ├── utils/
-  │   ├── treeUtils.ts  # Extracted logic
-  │   └── __tests__/
-  │       └── treeUtils.test.ts  # Dedicated tests
-  ```
-
-- **Robust Tree Formatting Character Handling**: When parsing tree text from formatted displays with multiple levels of nesting, use a comprehensive regex pattern to properly extract node names while preserving any legitimate filenames that might start with formatting characters. This is critical for handling complex hierarchies with mixed indentation:
-
-  ```typescript
-  // Regex to properly extract node names from tree formatting
-  const treeFormatRegex = /^(?:[│├└]\s*)*(?:[├└]──\s+)(.+)$/;
-  const match = line.match(treeFormatRegex);
-  
-  if (match && match[1]) {
-    // Extract the actual filename from the match
-    name = match[1];
-  }
-  ```
-
-- **Indentation Level Calculation for Tree Parsing**: When determining the nesting level of nodes in a tree text representation, count both visible characters (like `│`) and spaces to determine the correct nesting level. This ensures that deeply nested structures are parsed correctly:
-
-  ```typescript
-  // Count pipe characters to determine nesting level
-  const pipeCount = (line.match(/│/g) || []).length;
-  
-  // Count leading spaces and divide by 4 to normalize
-  const leadingSpaces = line.match(/^(\s*)/)?.[1].length || 0;
-  const spaceLevel = Math.floor(leadingSpaces / 4);
-  
-  // Use the maximum of pipe count or space level + 1 (for root)
-  const level = Math.max(pipeCount, spaceLevel) + 1;
-  ```
-
-- **Frontend Testing Setup**: To enable proper unit testing in a Tauri + React project using Vite, set up Vitest with:
-
-  ```bash
-  # Install testing dependencies
-  pnpm add -D vitest jsdom @testing-library/react @testing-library/jest-dom
-  
-  # Add test scripts to package.json
-  "scripts": {
-    "test": "vitest run",
-    "test:watch": "vitest"
-  }
-  
-  # Add Vitest configuration to vite.config.ts
-  test: {
-    globals: true,
-    environment: 'jsdom',
-    include: ['src/**/*.{test,spec}.{js,ts,jsx,tsx}'],
-    coverage: {
-      reporter: ['text', 'json', 'html'],
-    },
-  }
-  ```
-
-- **Enhanced Tree Parsing Algorithm**: When parsing tree text from formatted displays, use a multi-layered approach to correctly handle indentation and tree characters:
-  1. Process the root node separately as the first line
-  2. For each subsequent line, calculate indentation level using multiple indicators:
-     - Count vertical pipe characters (`│`) to determine nesting level base
-     - Count leading spaces and normalize to indentation level (spaces / 4)
-     - Check for branch characters (`├` or `└`) which add one additional level
-     - Use the maximum of pipe-based and space-based indentation plus branch indicator for final level
-  3. Extract node names with a comprehensive regex that handles all tree formatting characters:
-
-     ```typescript
-     const treeFormatRegex = /^(?:[│├└]\s*)*(?:[├└]──\s+)(.+)$/;
-     ```
-
-  4. Maintain a level-indexed array of nodes, preserving parent references at each level
-  5. Build paths intelligently to ensure correct hierarchical structure
-  6. Preserve IDs from original tree with path-based mapping
-
-  Example implementation:
-
-  ```typescript
-  // Calculate indentation level by multiple indicators
-  const calculateIndentLevel = (line: string): number => {
-    // For tree-formatted lines
-    if (/[│├└]/.test(line)) {
-      const pipeCount = (line.match(/│/g) || []).length;
-      const spaces = line.match(/^(\s+)/)?.[1].length || 0;
-      const spaceLevel = Math.ceil(spaces / 4);
-      const hasBranch = /[├└]/.test(line);
-      
-      // Use maximum of space-based or pipe-based level plus branch indicator
-      return Math.max(pipeCount, spaceLevel) + (hasBranch ? 1 : 0);
-    } else {
-      // For space-only indentation
-      const spaces = line.match(/^(\s*)/)?.[1].length || 0;
-      return Math.ceil(spaces / 4);
-    }
-  };
-  
-  // Track nodes by level - key insight
-  const nodesByLevel: TreeNode[] = [];
-  nodesByLevel[0] = root; // Root is at level 0
-  
-  for (let i = 1; i < lines.length; i++) {
-    const level = calculateIndentLevel(line);
-    const { name, isDir } = extractNodeName(line);
-    
-    // Find parent at previous level
-    let parentLevel = level - 1;
-    while (parentLevel >= 0 && !nodesByLevel[parentLevel]) {
-      parentLevel--; // Go up levels until we find a parent
-    }
-    
-    const parent = nodesByLevel[parentLevel];
-    
-    // Create and add node
-    const node = { id: idMap[path] || generateNewId(), name, is_dir: isDir, children: [] };
-    parent.children.push(node);
-    
-    // Set as parent for this level for future nested nodes
-    nodesByLevel[level] = node;
-  }
-  ```
-
-- **Simplified Tree Parsing Tests**: When testing tree parsing functions, use a path-based verification approach instead of checking node properties directly. This provides a more comprehensive and readable test that focuses on the key aspect: correct hierarchical structure.
-
-  ```typescript
-  // Path-based tree structure verification
-  it('should correctly parse tree text with formatting characters', () => {
-    // Create test tree JSON and tree text representation
-    const treeJson = JSON.stringify({/* sample tree structure */});
-    const treeText = `root/
-  ├── folder1/
-  │   ├── file1.txt
-  │   └── file2.txt`;
-    
-    // Parse tree
-    const result = parseTextToTree(treeText, treeJson);
-    
-    // Verify structure using paths
-    const resultPaths = getAllPaths(result!);
-    expect(resultPaths).toContain('root');
-    expect(resultPaths).toContain('root/folder1');
-    expect(resultPaths).toContain('root/folder1/file1.txt');
-    expect(resultPaths).toContain('root/folder1/file2.txt');
-  });
-  
-  // Helper to get all paths
-  function getAllPaths(node: TreeNode, parentPath: string = ''): string[] {
-    const currentPath = parentPath ? `${parentPath}/${node.name}` : node.name;
-    const paths = [currentPath];
-    
-    for (const child of node.children) {
-      paths.push(...getAllPaths(child, currentPath));
-    }
-    
-    return paths;
-  }
-  ```
-
-- **ID 保留策略关键点**: 在树结构编辑过程中，正确保留节点ID是确保重命名操作被正确跟踪的关键。TreeNamer依赖于**行号到ID的映射**而不是路径到ID的映射，因为即使文件名改变，行号在格式化显示中通常保持不变。
-
-  ```typescript
-  // 关键实现：使用行号映射获取ID
-  export const parseTextToTree = (text: string, originalTree: string): TreeNode | null => {
-    // 获取行号到ID的映射
-    const lineToIdMap = buildIdMapping(text, originalTree);
-    
-    // 处理根节点（第0行）
-    const root: TreeNode = {
-      id: lineToIdMap.get(0) || 'root-id', // 从第0行获取ID
-      name: rootName,
-      is_dir: isRootDir,
-      children: []
-    };
-    
-    // 处理后续行
-    for (let i = 1; i < lines.length; i++) {
-      // ... 解析节点信息 ...
-      
-      // 从行号i获取ID，而不是从路径获取
-      const nodeId = lineToIdMap.get(i) || `fallback-id-${i}`;
-      
-      // 创建节点时使用从行号映射中获取的ID
-      const node: TreeNode = {
-        id: nodeId, // 使用原始ID，确保重命名后ID不变
-        name,
-        is_dir: isDir,
-        children: []
-      };
-    }
-  };
-  
-  // 构建行号到ID的映射
-  export const buildIdMapping = (text: string, originalJson: string): Map<number, string> => {
-    const result = new Map<number, string>();
-    
-    // 解析原始树
-    const originalTree = JSON.parse(originalJson) as TreeNode;
-    const lines = text.trim().split('\n');
-    
-    // 根节点映射到第0行
-    result.set(0, originalTree.id);
-    
-    // 递归函数，跟踪行号和对应节点的ID
-    function mapIdsToLines(node: TreeNode, startLine = 0): number {
-      let currentLine = startLine;
-      
-      for (const child of node.children) {
-        currentLine++; // 移到下一行
-        result.set(currentLine, child.id); // 将当前行映射到节点ID
-        
-        // 递归处理子目录
-        if (child.is_dir && child.children.length > 0) {
-          currentLine = mapIdsToLines(child, currentLine);
-        }
-      }
-      
-      return currentLine;
-    }
-    
-    mapIdsToLines(originalTree, 0);
-    return result;
-  };
-  ```
-  
-  这种行号映射方法确保：
-  1. 即使文件或目录重命名，只要它们在树中的位置（行号）不变，ID就会保持不变
-  2. 重命名操作可以通过比较新旧树中具有相同ID但不同路径的节点来检测
-  3. 不会创建新ID，保持实体身份的稳定性
+```bash
+# Test scripts in package.json
+"scripts": {
+  "test": "vitest run",
+  "test:watch": "vitest"
+}
+```
 
 {{ARCHITECTURE_UPDATE}}
 {{BEST_PRACTICES}}

@@ -237,6 +237,7 @@ flowchart TD
 ```
 
 关键优势：
+
 - **精确跟踪**: 即使在复杂的重命名场景中也能准确识别变化
 - **避免数据丢失**: 不会错误地创建和删除文件
 - **操作简化**: 只需处理一种操作类型，降低复杂度
@@ -736,3 +737,59 @@ tauri-build = { version = "1.5", features = [] }
   ]
 }
 ```
+
+## Architecture Improvements
+
+### Centralized State Management
+
+The application follows a centralized state management pattern where all operations related to tree data flow are managed in a single place (`App.tsx`). This approach provides several benefits:
+
+1. **Single Source of Truth** - The main component holds all state related to tree data
+2. **Explicit Data Flow** - Clear data transformation path from backend JSON to tree text and edited text
+3. **Simplified Processing** - Consistent tree parsing with focus on ID preservation
+
+The following data flow diagram illustrates how tree data moves through the application:
+
+```
+┌──────────────┐     ┌──────────────┐     ┌──────────────┐
+│ Backend JSON │────>│ Formatted    │────>│ User-Edited  │
+│ (treeJson)   │     │ Text         │     │ Text         │
+└──────────────┘     │ (treeText)   │     │ (editedTree) │
+       ▲             └──────────────┘     └──────────┬───┘
+       │                                              │
+       │                                              │
+       │             ┌──────────────────────────────┐ │
+       └─────────────┤ Parse with ID preservation   │<┘
+                     └──────────────────────────────┘
+```
+
+#### Component Structure
+
+The application uses a simplified component structure:
+
+1. **App** (`App.tsx`) - Main component that:
+   - Manages all state related to tree data
+   - Handles directory loading, text formatting, and edit tracking
+   - Processes user edits with ID preservation
+   - Applies changes to the file system
+
+2. **MonacoEditor** (`MonacoEditor.tsx`) - Pure UI component for text editing
+   - Displays formatted tree text
+   - Captures user edits
+   - Forwards changes to parent component
+
+3. **TreeValidator** (`TreeValidator.tsx`) - Debugging component (DEV mode only)
+   - Validates tree parsing
+   - Shows parsing statistics and issues
+
+This simplified structure eliminates unnecessary component nesting and state forwarding, making the data flow more transparent and predictable.
+
+#### ID Management
+
+For proper tracking of renamed files/folders, the application preserves node IDs throughout the editing process:
+
+1. **ID Preservation** - Each node has a unique ID that remains constant during edits
+2. **Path Comparison** - The system detects renames by comparing paths for nodes with the same ID  
+3. **Rename Operation** - For nodes with the same ID but different paths, a rename operation is generated
+
+This approach ensures reliable tracking of renamed entities while maintaining a clean, focused codebase.

@@ -259,6 +259,56 @@ const safeName = FileSystemUtils.sanitizeFileName(userInputName);
 const relativePath = FileSystemUtils.getRelativePath(basePath, fullPath);
 ```
 
+## Frontend Utilities API
+
+### TreeNode Type
+
+```typescript
+interface TreeNode {
+  id: string;      // Unique identifier for the node
+  name: string;    // File or directory name
+  is_dir: boolean; // Whether this is a directory or file
+  children: TreeNode[]; // Child nodes (empty for files)
+}
+```
+
+### Tree Parsing Utilities
+
+#### parseTextToTree
+
+```typescript
+function parseTextToTree(
+  text: string, 
+  originalTree: string, 
+  mode: 'edit' | 'load' = 'edit'
+): TreeNode | null;
+```
+
+Parses formatted tree text back into a TreeNode structure.
+
+**Parameters:**
+- `text`: Formatted tree text with indentation
+- `originalTree`: Original tree structure as JSON string
+- `mode`: 
+  - `'edit'`: (Default) Preserves IDs when parsing user edits
+  - `'load'`: Uses backend tree directly when loading directories
+
+**Returns:**
+- Parsed TreeNode structure or null if parsing fails
+
+**Usage:**
+```typescript
+// For user-edited tree text
+const editedTree = parseTextToTree(modifiedText, originalJsonTree, 'edit');
+
+// For newly loaded directories
+const loadedTree = parseTextToTree(treeText, backendJsonTree, 'load');
+```
+
+#### formatTreeToText
+
+// ... existing code ...
+
 ## 事件系统
 
 TreeNamer 使用 Tauri 事件系统在后端和前端之间通信：

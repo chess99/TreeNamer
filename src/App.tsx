@@ -1,14 +1,39 @@
 import { invoke } from '@tauri-apps/api/core';
 import { open } from '@tauri-apps/plugin-dialog';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import './App.css';
-import DirectoryTree from './components/FileTree/DirectoryTree';
+import MonacoEditor from './components/Editor/MonacoEditor';
+import TreeValidator from './components/FileTree/TreeValidator';
+import { TreeNode } from './types/TreeNode';
+import { formatTreeToText, parseTextToTree } from './utils/treeUtils';
 
 function App() {
+  // Core state
   const [directoryPath, setDirectoryPath] = useState<string>('');
-  const [treeContent, setTreeContent] = useState<string>('');
+  const [treeJson, setTreeJson] = useState<string>(''); // Backend JSON
+  const [treeText, setTreeText] = useState<string>(''); // Formatted text for display
+  const [editedTreeText, setEditedTreeText] = useState<string>(''); // User-edited text
+  const [isEdited, setIsEdited] = useState<boolean>(false);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+  const [notification, setNotification] = useState<{ type: string; message: string } | null>(null);
+
+  // Format JSON to text when treeJson changes
+  useEffect(() => {
+    if (treeJson) {
+      try {
+        const parsedTree = JSON.parse(treeJson) as TreeNode;
+        const formattedText = formatTreeToText(parsedTree);
+        setTreeText(formattedText);
+        setEditedTreeText(formattedText);
+        setIsEdited(false);
+      } catch (error) {
+        console.error('Error formatting tree JSON:', error);
+        setTreeText('Error formatting tree data');
+        setEditedTreeText('Error formatting tree data');
+      }
+    }
+  }, [treeJson]);
 
   const handleBrowse = async () => {
     try {
@@ -24,7 +49,7 @@ function App() {
       if (selected && typeof selected === 'string') {
         console.log('Selected directory:', selected);
         setDirectoryPath(selected);
-        await parseDirectory(selected);
+        await loadDirectory(selected);
       }
     } catch (err) {
       console.error('Error in handleBrowse:', err);
@@ -38,28 +63,32 @@ function App() {
 
   const handleInputKeyDown = async (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter' && directoryPath.trim()) {
-      await parseDirectory(directoryPath);
+      await loadDirectory(directoryPath);
     }
   };
 
   const handleLoad = async () => {
     if (directoryPath.trim()) {
-      await parseDirectory(directoryPath);
+      await loadDirectory(directoryPath);
     }
   };
 
-  const parseDirectory = async (path: string) => {
+  // Centralized function to load directory
+  const loadDirectory = async (path: string) => {
     try {
       setIsLoading(true);
       setError(null);
       
-      console.log('Parsing directory:', path);
+      console.log('Loading directory:', path);
       console.log('Calling parse_directory with params:', { dirPath: path });
       
       try {
+        // Get tree directly from backend
         const result = await invoke<string>('parse_directory', { dirPath: path });
         console.log('Parse directory successful, received data length:', result?.length || 0);
-        setTreeContent(result);
+        
+        // Set the tree JSON (will trigger useEffect to format to text)
+        setTreeJson(result);
         console.log('Tree content updated');
       } catch (invokeErr) {
         console.error('Invoke error details:', {
@@ -71,30 +100,60 @@ function App() {
         throw invokeErr;
       }
     } catch (err) {
-      console.error('Error parsing directory:', err);
+      console.error('Error loading directory:', err);
       setError(`解析目录时出错: ${err}`);
     } finally {
       setIsLoading(false);
     }
   };
 
-  const handleApplyChanges = async (modifiedTree: string) => {
+  // Handle user edits to tree text
+  const handleTreeTextChange = (newValue: string) => {
+    setEditedTreeText(newValue);
+    setIsEdited(newValue !== treeText);
+  };
+
+  // Handle applying changes
+  const handleApplyChanges = async () => {
+    if (!isEdited) {
+      setNotification({ type: 'info', message: '没有修改需要应用' });
+      setTimeout(() => setNotification(null), 3000);
+      return;
+    }
+
     try {
+      setIsLoading(true);
       setError(null);
+      
       console.log('Applying changes to directory:', directoryPath);
       
-      await invoke('apply_operations', { 
+      // Parse edited text back to tree structure to preserve IDs
+      const parsedTree = parseTextToTree(editedTreeText, treeJson);
+      
+      if (!parsedTree) {
+        throw new Error('Failed to parse edited tree');
+      }
+      
+      // Convert to JSON for backend
+      const modifiedJson = JSON.stringify(parsedTree);
+      
+      // Apply changes via backend
+      await invoke('apply_operations', {
         dirPath: directoryPath,
-        originalTree: treeContent, 
-        modifiedTree: modifiedTree 
+        originalTree: treeJson,
+        modifiedTree: modifiedJson
       });
       
-      // Re-parse the directory to show updated tree
-      await parseDirectory(directoryPath);
+      // Reload directory to get fresh tree
+      await loadDirectory(directoryPath);
+      
+      setNotification({ type: 'success', message: '修改成功应用' });
     } catch (err) {
       console.error('Error applying changes:', err);
-      setError(`应用修改时出错: ${err}`);
-      throw err; // Rethrow to handle in the component
+      setNotification({ type: 'error', message: `应用修改出错: ${err}` });
+    } finally {
+      setIsLoading(false);
+      setTimeout(() => setNotification(null), 3000);
     }
   };
 
@@ -123,21 +182,53 @@ function App() {
 
         {error && <div className="error-message">{error}</div>}
 
-        {isLoading && !treeContent && (
+        {isLoading && !treeJson && (
           <div className="loading">
             <div className="spinner"></div>
             <p>加载中...</p>
           </div>
         )}
 
-        {treeContent && (
-          <DirectoryTree 
-            originalTree={treeContent} 
-            onApplyChanges={handleApplyChanges}
-          />
+        {treeJson && (
+          <div className="tree-operations-layout">
+            {/* Tree view editor */}
+            <div className="tree-view">
+              {isLoading && (
+                <div className="loading-overlay">
+                  <div className="spinner"></div>
+                </div>
+              )}
+              <MonacoEditor 
+                value={editedTreeText} 
+                onChange={handleTreeTextChange} 
+                height="500px"
+              />
+            </div>
+
+            {/* Action buttons */}
+            <div className="action-buttons">
+              <button 
+                className="button" 
+                onClick={handleApplyChanges}
+                disabled={isLoading || !isEdited}
+              >
+                应用修改
+              </button>
+            </div>
+
+            {/* Notification */}
+            {notification && (
+              <div className={`notification ${notification.type}`}>
+                {notification.message}
+              </div>
+            )}
+            
+            {/* Add Tree Validator component in debug mode */}
+            {import.meta.env.DEV && <TreeValidator treeText={editedTreeText} treeJson={treeJson} />}
+          </div>
         )}
 
-        {!treeContent && !isLoading && (
+        {!treeJson && !isLoading && (
           <div className="no-content">
             <p>请选择一个目录来开始</p>
           </div>

@@ -179,11 +179,15 @@ export const extractNodeName = (line: string): { name: string; is_dir: boolean }
  * @param originalTree Original tree structure as JSON string (for ID preservation)
  * @returns Parsed TreeNode structure, or null if parsing failed
  */
-export const parseTextToTree = (text: string, originalTree: string): TreeNode | null => {
+export const parseTextToTree = (
+  text: string, 
+  originalTree: string
+): TreeNode | null => {
   try {
     console.log('\n======== PARSING TREE ========');
     console.log('Original text:\n', text);
     
+    // For edit mode, proceed with the existing logic to preserve IDs
     const lines = text.trim().split('\n');
     if (lines.length === 0) return null;
     
@@ -410,7 +414,7 @@ export const validateTreeParsing = (treeText: string, treeJson?: string): { vali
       children: [] 
     });
     
-    // 解析文本到树结构
+    // 解析文本到树结构 - using edit mode for validation
     const parsed = parseTextToTree(treeText, jsonToUse);
     
     if (!parsed) {

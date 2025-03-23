@@ -238,24 +238,49 @@ Use Tauri framework combining Rust for the backend and React/TypeScript for the 
 - Some increased complexity due to language boundary crossing
 - Potential learning curve for developers unfamiliar with Rust
 
-## ADR-009: Text-Based Tree Representation for UI
+## ADR-009: ID Management and Centralized State Architecture
 
-**Date**: 2024-03-17
+### Status
+Accepted
 
-**Status**: Superseded by ADR-005
+### Context
+The application needs a reliable way to track renamed files/folders across tree operations. The previous architecture had state management and ID tracking spread across multiple components, leading to issues with ID consistency and false rename detections.
 
-**Context**:
-We need a straightforward, human-editable way to represent directory trees for renaming operations.
+### Decision
+1. **Centralize State Management**
+   - Move all tree-related state to the App component
+   - Implement clear data flow: backend JSON → formatted text → edited text
 
-**Decision**:
-Represent directory trees as text with visual indentation, similar to the output of the `tree` command in Unix systems.
+2. **ID Management Strategy**
+   - Backend generates and assigns IDs when parsing directories
+   - Frontend preserves IDs during user edits
+   - Two modes for `parseTextToTree`:
+     - 'edit': Preserves IDs when parsing user edits
+     - 'load': Uses backend tree directly when loading directories
 
-**Consequences**:
-- Intuitive for users familiar with command-line tools
-- Easy to edit without requiring complex UI components
-- Requires parsing logic to convert between text and actual file system operations
-- May have limitations in representing special characters in filenames
-- Need careful error handling for invalid modifications to the text format
+### Consequences
+- **Positive**
+  - Reliable rename detection through ID preservation
+  - Elimination of false renames when reloading directories
+  - Simplified debugging with centralized state
+  - Clear component responsibilities
+  
+- **Negative**
+  - Slightly more complex core component (App.tsx)
+  - Need to maintain two processing modes
+
+### Implementation
+The App component now handles:
+1. Directory loading (via backend JSON)
+2. Text formatting for display 
+3. Tracking user edits
+4. Applying changes with 'edit' mode parsing
+
+Tree parsing utility modes:
+```typescript
+parseTextToTree(text, originalJson, 'edit') // For user edits
+parseTextToTree(text, originalJson, 'load') // For fresh directory loads
+```
 
 ## ADR-010: Event-Based State Management
 
