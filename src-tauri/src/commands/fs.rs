@@ -139,67 +139,34 @@ pub fn generate_operations_from_json(
         println!("  ID: {}, Path: {}, IsDir: {}", id, path, is_dir);
     }
     
+    // 获取基本路径的文件名，用于创建绝对路径
+    let base_dir_name = base_path.file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("");
+    
     // 生成需要重命名的操作
     let mut operations = Vec::new();
     
-    // 递归函数，遍历整个树来查找有oldPath但没有newPath的节点
-    fn collect_rename_operations(
-        node: &TreeNode, 
-        base_path: &Path, 
-        operations: &mut Vec<FileOperation>
-    ) {
-        // 检查当前节点是否有oldPath属性，表示这是一个重命名操作
-        if let Some(old_path) = &node.old_path {
-            // 如果有oldPath，则使用该值作为源路径
-            let from_path = base_path.join(old_path).to_string_lossy().to_string();
-            
-            // 构建当前节点的新路径
-            let new_path = if let Some(ref new_path) = node.new_path {
-                // 如果显式提供了newPath，则使用它
-                new_path.clone()
-            } else {
-                // 否则根据当前位置构建路径
-                node.name.clone()
-            };
-            
-            // 创建重命名操作
-            println!("Found rename: {} -> {}", old_path, new_path);
-            operations.push(FileOperation::Rename {
-                from: from_path,
-                to: base_path.join(new_path).to_string_lossy().to_string(),
-            });
-        }
-        
-        // 递归处理所有子节点
-        for child in &node.children {
-            collect_rename_operations(child, base_path, operations);
-        }
-    }
-    
-    // 从修改后的树开始收集重命名操作
-    collect_rename_operations(&modified_node, base_path, &mut operations);
-    
-    // 如果没有找到任何操作，检查所有节点ID是否都匹配
-    if operations.is_empty() {
-        println!("No explicit rename operations found with oldPath/newPath. Checking IDs...");
-        
-        // 检查每个ID是否在两棵树中路径不同，这表示重命名
-        for (id, (mod_path, _)) in &modified_id_paths {
-            // 查找原始树中相同ID的节点
-            if let Some((orig_path, _)) = original_id_paths.get(id) {
-                // 如果路径变了，就是重命名操作
-                if orig_path != mod_path {
-                    println!("Found rename based on ID {}: {} -> {}", id, orig_path, mod_path);
-                    
-                    operations.push(FileOperation::Rename {
-                        from: base_path.join(orig_path).to_string_lossy().to_string(),
-                        to: base_path.join(mod_path).to_string_lossy().to_string(),
-                    });
-                }
-            } else {
-                // ID在修改后的树中存在，但在原始树中不存在
-                println!("Warning: ID {} in modified tree not found in original tree.", id);
+    // 遍历所有ID，检查是否有路径变化
+    for (id, (mod_path, _)) in &modified_id_paths {
+        // 查找原始树中相同ID的节点
+        if let Some((orig_path, _)) = original_id_paths.get(id) {
+            // 如果路径变了，就是重命名操作
+            if orig_path != mod_path {
+                println!("Found rename: {} -> {}", orig_path, mod_path);
+                
+                // 将相对路径转换为绝对路径
+                let from_absolute = base_path.join(orig_path.trim_start_matches(&format!("{}/", base_dir_name)));
+                let to_absolute = base_path.join(mod_path.trim_start_matches(&format!("{}/", base_dir_name)));
+                
+                operations.push(FileOperation::Rename {
+                    from: from_absolute.to_string_lossy().to_string(),
+                    to: to_absolute.to_string_lossy().to_string(),
+                });
             }
+        } else {
+            // ID在修改后的树中存在，但在原始树中不存在
+            println!("Warning: ID {} in modified tree not found in original tree.", id);
         }
     }
     
@@ -245,36 +212,9 @@ pub fn apply_operations(
     // 应用操作
     let mut results = Vec::new();
     
-    // 删除操作中可能包含的重复目录路径
-    let base_path = Path::new(&dirPath);
-    let base_name = base_path.file_name()
-        .map(|n| n.to_string_lossy().to_string())
-        .unwrap_or_default();
-    
-    // 修复路径中可能包含的重复目录名
-    let fixed_operations: Vec<FileOperation> = operations.into_iter()
-        .map(|op| match op {
-            FileOperation::Rename { from, to } => {
-                // 检查路径是否包含重复目录，如 D:\__temp\__temp\file.txt
-                let from_fixed = fix_duplicate_path(&from, &base_name);
-                let to_fixed = fix_duplicate_path(&to, &base_name);
-                
-                if from != from_fixed || to != to_fixed {
-                    println!("Fixed path:\n  From: {} -> {}\n  To: {} -> {}", 
-                        from, from_fixed, to, to_fixed);
-                }
-                
-                FileOperation::Rename { 
-                    from: from_fixed,
-                    to: to_fixed
-                }
-            }
-        })
-        .collect();
-    
     // 重命名操作已经按照从文件到目录、从深到浅的顺序排序
     println!("Applying rename operations:");
-    for (i, op) in fixed_operations.iter().enumerate() {
+    for (i, op) in operations.iter().enumerate() {
         let FileOperation::Rename { from, to } = op;
         println!("  {}. {} -> {}", i+1, from, to);
         
@@ -286,71 +226,27 @@ pub fn apply_operations(
     Ok(results)
 }
 
-// 修复可能包含重复目录的路径
-fn fix_duplicate_path(path: &str, base_name: &str) -> String {
-    println!("Fixing path: {}", path);
-    
-    // Windows路径处理: 转换可能的 \ 为 /
-    let normalized_path = path.replace('\\', "/");
-    
-    // 检查路径是否包含重复的基目录名称
-    let base_path_pattern = format!("/{}/{}/", base_name, base_name);
-    let base_start_pattern = format!("{}/{}/", base_name, base_name);
-    
-    let fixed_path = if normalized_path.contains(&base_path_pattern) {
-        // 修复中间的重复目录名称
-        normalized_path.replace(&base_path_pattern, format!("/{}/", base_name).as_str())
-    } else if normalized_path.starts_with(&base_start_pattern) {
-        // 修复开头的重复目录名称
-        normalized_path.replacen(&base_start_pattern, format!("{}/", base_name).as_str(), 1)
-    } else {
-        normalized_path.clone()
-    };
-    
-    // 如果有修复，记录日志
-    if fixed_path != normalized_path {
-        println!("  Fixed duplicate directory: {} -> {}", path, fixed_path);
-    }
-    
-    // 转换回适合当前操作系统的路径分隔符
-    if cfg!(windows) {
-        fixed_path.replace('/', "\\")
-    } else {
-        fixed_path
-    }
-}
-
-// 简化测试函数，测试确定目录重复情况
-fn test_fix_duplicate_path() {
-    println!("Running path fixing tests:");
-    
-    let test1 = fix_duplicate_path("D:\\__temp\\__temp\\file.txt", "__temp");
-    println!("Test 1: D:\\__temp\\__temp\\file.txt -> {}", test1);
-    assert_eq!(test1, "D:\\__temp\\file.txt".to_string());
-    
-    let test2 = fix_duplicate_path("D:\\dir\\dir\\subdir\\file.txt", "dir");
-    println!("Test 2: D:\\dir\\dir\\subdir\\file.txt -> {}", test2);
-    assert_eq!(test2, "D:\\dir\\subdir\\file.txt".to_string());
-    
-    let test3 = fix_duplicate_path("D:\\normal\\path\\file.txt", "normal");
-    println!("Test 3: D:\\normal\\path\\file.txt -> {}", test3);
-    assert_eq!(test3, "D:\\normal\\path\\file.txt".to_string());
-    
-    println!("Path fixing tests completed!");
-}
-
 // 应用操作的函数
 fn apply_operation(operation: &FileOperation) -> OperationResult {
-    // 运行简单测试
-    #[cfg(debug_assertions)]
-    test_fix_duplicate_path();
-    
     match operation {
         FileOperation::Rename { from, to } => {
-            let from_path = Path::new(from);
-            let to_path = Path::new(to);
+            // 转换路径分隔符，在Windows系统上转换为反斜杠
+            let from_normalized = if cfg!(windows) {
+                from.replace('/', "\\")
+            } else {
+                from.clone()
+            };
             
-            println!("Applying rename operation: from '{}' to '{}'", from, to);
+            let to_normalized = if cfg!(windows) {
+                to.replace('/', "\\")
+            } else {
+                to.clone()
+            };
+            
+            let from_path = Path::new(&from_normalized);
+            let to_path = Path::new(&to_normalized);
+            
+            println!("Applying rename operation: from '{}' to '{}'", from_normalized, to_normalized);
             
             // Check if paths exist
             println!("From path exists: {}", from_path.exists());
@@ -373,25 +269,115 @@ fn apply_operation(operation: &FileOperation) -> OperationResult {
                 }
             }
             
+            // 如果源路径不存在，报告错误
+            if !from_path.exists() {
+                println!("Source path does not exist: {}", from_path.display());
+                return OperationResult {
+                    success: false,
+                    message: format!("Source path does not exist: {}", from_path.display()),
+                };
+            }
+            
+            // 对目录的特殊处理
+            if from_path.is_dir() {
+                // 如果目标路径已经存在，先尝试删除（如果是空目录）
+                if to_path.exists() && to_path.is_dir() {
+                    println!("Target directory already exists, checking if it's empty...");
+                    match fs::read_dir(to_path) {
+                        Ok(entries) => {
+                            if entries.count() == 0 {
+                                println!("Target directory is empty, removing it");
+                                if let Err(e) = fs::remove_dir(to_path) {
+                                    println!("Failed to remove empty target directory: {}", e);
+                                    // 继续尝试重命名，可能会失败
+                                }
+                            } else {
+                                println!("Target directory is not empty, rename operation will likely fail");
+                            }
+                        },
+                        Err(e) => {
+                            println!("Failed to read target directory: {}", e);
+                            // 继续尝试重命名，可能会失败
+                        }
+                    }
+                }
+            }
+            
             println!("Attempting to rename file");
             match fs::rename(from_path, to_path) {
                 Ok(_) => {
-                    println!("Rename successful: {} to {}", from, to);
+                    println!("Rename successful: {} to {}", from_normalized, to_normalized);
                     OperationResult {
                         success: true,
-                        message: format!("Renamed {} to {}", from, to),
+                        message: format!("Renamed {} to {}", from_normalized, to_normalized),
                     }
                 },
                 Err(e) => {
-                    println!("Rename failed: {} to {}: {}", from, to, e);
-                    OperationResult {
-                        success: false,
-                        message: format!("Failed to rename {} to {}: {}", from, to, e),
+                    // 如果重命名失败，尝试手动实现目录复制和删除
+                    if from_path.is_dir() && e.kind() == std::io::ErrorKind::DirectoryNotEmpty {
+                        println!("Directory rename failed because directory not empty, trying manual copy...");
+                        if let Err(copy_err) = copy_dir_recursively(from_path, to_path) {
+                            println!("Failed to manually copy directory: {}", copy_err);
+                            return OperationResult {
+                                success: false,
+                                message: format!("Failed to rename directory: {}. Manual copy also failed: {}", e, copy_err),
+                            };
+                        }
+                        
+                        // 复制成功后，删除源目录 (如果可能)
+                        match fs::remove_dir_all(from_path) {
+                            Ok(_) => {
+                                println!("Successfully copied directory and removed original");
+                                OperationResult {
+                                    success: true,
+                                    message: format!("Manually copied directory from {} to {}", from_normalized, to_normalized),
+                                }
+                            },
+                            Err(rm_err) => {
+                                println!("Directory copied but failed to remove original: {}", rm_err);
+                                OperationResult {
+                                    success: true, // 仍然认为是成功的，因为内容已经复制
+                                    message: format!("Copied directory from {} to {} but could not remove original: {}", 
+                                        from_normalized, to_normalized, rm_err),
+                                }
+                            }
+                        }
+                    } else {
+                        println!("Rename failed: {} to {}: {}", from_normalized, to_normalized, e);
+                        OperationResult {
+                            success: false,
+                            message: format!("Failed to rename {} to {}: {}", from_normalized, to_normalized, e),
+                        }
                     }
                 },
             }
         },
     }
+}
+
+// 递归复制目录及其内容
+fn copy_dir_recursively(from: &Path, to: &Path) -> std::io::Result<()> {
+    // 确保目标目录存在
+    if !to.exists() {
+        fs::create_dir_all(to)?;
+    }
+    
+    // 遍历源目录中的所有条目
+    for entry in fs::read_dir(from)? {
+        let entry = entry?;
+        let from_path = entry.path();
+        let to_path = to.join(entry.file_name());
+        
+        if from_path.is_dir() {
+            // 递归复制子目录
+            copy_dir_recursively(&from_path, &to_path)?;
+        } else {
+            // 复制文件
+            fs::copy(&from_path, &to_path)?;
+        }
+    }
+    
+    Ok(())
 }
 
 // 以下函数保持不变，但在新算法中可能不再需要
