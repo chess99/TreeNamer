@@ -1,6 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
-import { open } from '@tauri-apps/plugin-dialog';
-import { useEffect, useState } from 'react';
+import { confirm, open } from '@tauri-apps/plugin-dialog';
+import { useEffect, useRef, useState } from 'react';
 import './App.css';
 import MonacoEditor from './components/Editor/MonacoEditor';
 import TreeValidator from './components/FileTree/TreeValidator';
@@ -11,12 +11,36 @@ function App() {
   // Core state
   const [directoryPath, setDirectoryPath] = useState<string>('');
   const [treeJson, setTreeJson] = useState<string>(''); // Backend JSON
-  const [treeText, setTreeText] = useState<string>(''); // Formatted text for display
   const [editedTreeText, setEditedTreeText] = useState<string>(''); // User-edited text
   const [isEdited, setIsEdited] = useState<boolean>(false);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [notification, setNotification] = useState<{ type: string; message: string } | null>(null);
+  // Add state to track window size changes
+  const [windowSize, setWindowSize] = useState<{ width: number; height: number }>({ 
+    width: window.innerWidth, 
+    height: window.innerHeight 
+  });
+  
+  // Reference to original text for true comparison
+  const originalTextRef = useRef<string>('');
+
+  // Handle window resize events
+  useEffect(() => {
+    const handleResize = () => {
+      setWindowSize({
+        width: window.innerWidth,
+        height: window.innerHeight
+      });
+    };
+
+    window.addEventListener('resize', handleResize);
+    
+    // Clean up event listener on component unmount
+    return () => {
+      window.removeEventListener('resize', handleResize);
+    };
+  }, []);
 
   // Format JSON to text when treeJson changes
   useEffect(() => {
@@ -24,12 +48,15 @@ function App() {
       try {
         const parsedTree = JSON.parse(treeJson) as TreeNode;
         const formattedText = formatTreeToText(parsedTree);
-        setTreeText(formattedText);
+        
+        // Set state variables and reference
         setEditedTreeText(formattedText);
+        originalTextRef.current = formattedText;
+        
+        // Reset edited state
         setIsEdited(false);
       } catch (error) {
         console.error('Error formatting tree JSON:', error);
-        setTreeText('Error formatting tree data');
         setEditedTreeText('Error formatting tree data');
       }
     }
@@ -110,7 +137,14 @@ function App() {
   // Handle user edits to tree text
   const handleTreeTextChange = (newValue: string) => {
     setEditedTreeText(newValue);
-    setIsEdited(newValue !== treeText);
+    
+    // Normalize whitespace for both texts to avoid detecting insignificant whitespace changes
+    const normalizedNew = newValue.trim().replace(/\s+/g, ' ');
+    const normalizedOriginal = originalTextRef.current.trim().replace(/\s+/g, ' ');
+    
+    // Compare with original reference to detect actual changes
+    // This ensures if user edits text and then reverts to original, isEdited will be false
+    setIsEdited(normalizedNew !== normalizedOriginal);
   };
 
   // Handle applying changes
@@ -147,23 +181,20 @@ function App() {
       // Reload directory to get fresh tree
       await loadDirectory(directoryPath);
       
+      // Show success notification
       setNotification({ type: 'success', message: '修改成功应用' });
+      setTimeout(() => setNotification(null), 3000);
     } catch (err) {
       console.error('Error applying changes:', err);
       setNotification({ type: 'error', message: `应用修改出错: ${err}` });
+      setTimeout(() => setNotification(null), 5000);
     } finally {
       setIsLoading(false);
-      setTimeout(() => setNotification(null), 3000);
     }
   };
 
   return (
     <div className="app-container">
-      <header className="app-header">
-        <h1>TreeNamer</h1>
-        <p>通过编辑目录树结构来批量重命名文件和文件夹</p>
-      </header>
-
       <main>
         <div className="controls">
           <button onClick={handleBrowse}>浏览...</button>
@@ -175,8 +206,29 @@ function App() {
             placeholder="输入目录路径或点击浏览选择目录"
             className="directory-input"
           />
-          <button onClick={handleLoad} disabled={!directoryPath.trim() || isLoading}>
-            {isLoading ? '加载中...' : '加载'}
+          <button 
+            onClick={async () => {
+              if (isEdited) {
+                // Use Tauri's dialog API which returns a Promise
+                const confirmed = await confirm(
+                  "您有未应用的修改。继续刷新将丢失这些修改。是否继续？",
+                  { title: "确认刷新", kind: "warning" }
+                );
+                
+                if (confirmed) {
+                  handleLoad();
+                }
+              } else {
+                handleLoad();
+              }
+            }} 
+            disabled={!directoryPath.trim() || isLoading}
+            className="refresh-button"
+            title="刷新"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/>
+            </svg>
           </button>
         </div>
 
@@ -201,12 +253,20 @@ function App() {
               <MonacoEditor 
                 value={editedTreeText} 
                 onChange={handleTreeTextChange} 
-                height="500px"
+                height="100%"
+                key={`editor-${windowSize.width}-${windowSize.height}`}
               />
             </div>
 
             {/* Action buttons */}
             <div className="action-buttons">
+              <button 
+                className="button secondary" 
+                onClick={() => alert("Diff view will be implemented here")}
+                disabled={isLoading || !isEdited}
+              >
+                查看差异
+              </button>
               <button 
                 className="button" 
                 onClick={handleApplyChanges}
